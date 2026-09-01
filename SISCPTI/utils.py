@@ -64,13 +64,22 @@ def upload_file_to_supabase(file):
 
 def save_file_locally(file):
     from werkzeug.utils import secure_filename
+    import tempfile
+    
     filename = secure_filename(file.filename)
     unique_filename = str(uuid.uuid4())[:8] + "_" + filename
-    upload_folder = os.path.join('SISCPTI', 'static', 'img', 'uploads')
+    
+    if os.environ.get('VERCEL') == '1':
+        upload_folder = os.path.join(tempfile.gettempdir(), 'uploads')
+    else:
+        upload_folder = os.path.join('SISCPTI', 'static', 'img', 'uploads')
+        
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
+        
     save_path = os.path.join(upload_folder, unique_filename)
     file.save(save_path)
+    
     return "img/uploads/" + unique_filename
 
 def enviar_email(destinatario, assunto, corpo):
