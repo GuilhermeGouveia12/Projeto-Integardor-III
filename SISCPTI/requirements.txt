@@ -9,3 +9,6 @@ flask-socketio
 reportlab
 psycopg2-binary
 requests==2.32.5
+gunicorn==21.2.0
+eventlet==0.36.1
+Werkzeug==3.1.3
