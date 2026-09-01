@@ -142,5 +142,4 @@ import routes_project
 import routes_admin
 
 if __name__ == '__main__':
-    from app_instance import socketio
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    app.run(debug=True)

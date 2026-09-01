@@ -3,7 +3,7 @@ import os
 from models import db
 
 app = Flask(__name__)
-app.secret_key = "sisCPTI_secret_key"
+app.secret_key = os.environ.get('SECRET_KEY', 'sisCPTI_secret_key')
 
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///siscpti.db')
 if db_url.startswith("postgres://"):
@@ -16,8 +16,17 @@ UPLOAD_FOLDER = os.path.join('static', 'img', 'uploads')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Configurações do Supabase (para o frontend usar o Realtime)
+app.config['SUPABASE_URL'] = os.environ.get('SUPABASE_URL', '')
+app.config['SUPABASE_ANON_KEY'] = os.environ.get('SUPABASE_ANON_KEY', '')
+
+# Expõe as variáveis do Supabase para todos os templates Jinja2
+@app.context_processor
+def inject_supabase_config():
+    return {
+        'SUPABASE_URL': app.config['SUPABASE_URL'],
+        'SUPABASE_ANON_KEY': app.config['SUPABASE_ANON_KEY'],
+    }
+
 # Inicializa o banco de dados no app Flask
 db.init_app(app)
-
-from flask_socketio import SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*")

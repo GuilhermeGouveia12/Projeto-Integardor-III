@@ -440,9 +440,6 @@ def enviar_mensagem_ajax(projeto_id):
             "data_envio": nova_msg.data_envio.strftime('%d/%m %H:%M')
         }
         
-        from app_instance import socketio
-        socketio.emit('message', msg_dict, to=str(projeto_id))
-        
         return jsonify({
             "status": "success",
             "message": msg_dict
@@ -1045,18 +1042,5 @@ def api_projeto_metrics(projeto_id):
         })
         
     return jsonify(tasks_data)
-
-# ==========================================
-# Eventos do SocketIO para o Chat
-# ==========================================
-from app_instance import socketio
-from flask_socketio import join_room
-
-@socketio.on('join')
-def on_join(data):
-    projeto_id = data.get('projeto_id')
-    if projeto_id:
-        room = str(projeto_id)
-        join_room(room)
 
 
