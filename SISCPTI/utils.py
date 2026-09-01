@@ -23,6 +23,7 @@ def upload_file_to_supabase(file):
         # Tenta criar o bucket caso nao exista (auto-inicializacao)
         try:
             bucket_headers = {
+                "apikey": supabase_key,
                 "Authorization": f"Bearer {supabase_key}",
                 "Content-Type": "application/json"
             }
@@ -39,6 +40,7 @@ def upload_file_to_supabase(file):
         url = f"{supabase_url}/storage/v1/object/{supabase_bucket}/{unique_filename}"
         
         headers = {
+            "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
             "Content-Type": file.content_type or "application/octet-stream"
         }
