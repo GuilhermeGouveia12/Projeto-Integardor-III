@@ -7,9 +7,16 @@
     <div class="perfil-avatar-lg">{{ session.user[0]|upper }}</div>
     <div>
       <h2 style="margin: 0 0 0.2rem;">{{ session.user }}</h2>
-      {% set current_user = namespace(email='', bio='') %}
       <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">
-        🎓 Membro do SisCPTI
+        {% if session.role == 'admin' %}
+          👑 Administrador do Sistema
+        {% elif session.role == 'coordenador' %}
+          📋 Coordenador
+        {% elif session.role == 'professor' %}
+          👨‍🏫 Professor Orientador
+        {% else %}
+          🎓 Estudante / Membro
+        {% endif %}
       </p>
     </div>
   </div>
