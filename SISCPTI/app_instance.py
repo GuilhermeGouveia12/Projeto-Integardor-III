@@ -2,7 +2,15 @@ from flask import Flask
 import os
 from models import db
 
-app = Flask(__name__)
+import tempfile
+
+base_dir = os.path.abspath(os.path.dirname(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(base_dir, 'templates'),
+    static_folder=os.path.join(base_dir, 'static')
+)
 app.secret_key = os.environ.get('SECRET_KEY', 'sisCPTI_secret_key')
 
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///siscpti.db')
@@ -12,9 +20,15 @@ if db_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-UPLOAD_FOLDER = os.path.join('static', 'img', 'uploads')
+# No Vercel, o sistema de arquivos é apenas leitura (read-only), exceto a pasta /tmp.
+if os.environ.get('VERCEL') == '1':
+    UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'uploads')
+else:
+    UPLOAD_FOLDER = os.path.join(base_dir, 'static', 'img', 'uploads')
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 
 # Configurações do Supabase (para o frontend usar o Realtime)
 app.config['SUPABASE_URL'] = os.environ.get('SUPABASE_URL', '')
