@@ -51,9 +51,9 @@ export function Home() {
         </p>
 
         <p>
-          Ao participar do PI/PF, todas as partes compreendem que o resultado final poderá se concretizar como um 
-           <strong>Produto Mínimo Viável (MVP)</strong>, uma <strong>Prova de Conceito (PoC)</strong> ou um
-           <strong>Protótipo Funcional</strong>, cujo propósito essencial é materializar ideias e hipóteses em soluções funcionais e verificáveis.
+          Ao participar do PI/PF, todas as partes compreendem que o resultado final poderá se concretizar como um{' '}
+          <strong>Produto Mínimo Viável (MVP)</strong>, uma <strong>Prova de Conceito (PoC)</strong> ou um{' '}
+          <strong>Protótipo Funcional</strong>, cujo propósito essencial é materializar ideias e hipóteses em soluções funcionais e verificáveis.
         </p>
 
         <p>
