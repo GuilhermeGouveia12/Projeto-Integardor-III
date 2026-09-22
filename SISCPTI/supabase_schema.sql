@@ -166,16 +166,52 @@ BEGIN
 END $$;
 
 -- --------------------------------------------------------
--- 5. ROW LEVEL SECURITY (RLS) — TABELA MESSAGE
+-- 5. ROW LEVEL SECURITY (RLS)
+-- Habilita RLS com políticas de acesso para a aplicação operar normalmente
 -- --------------------------------------------------------
-ALTER TABLE message ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "user" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_user" ON "user";
+CREATE POLICY "acesso_user" ON "user" FOR ALL USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "acesso_mensagens" ON message;
-CREATE POLICY "acesso_mensagens"
-    ON message
-    FOR ALL
-    USING (true)
-    WITH CHECK (true);
+ALTER TABLE project ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_project" ON project;
+CREATE POLICY "acesso_project" ON project FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE submission ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_submission" ON submission;
+CREATE POLICY "acesso_submission" ON submission FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE application ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_application" ON application;
+CREATE POLICY "acesso_application" ON application FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE message ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_message" ON message;
+CREATE POLICY "acesso_message" ON message FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE notification ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_notification" ON notification;
+CREATE POLICY "acesso_notification" ON notification FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE rating ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_rating" ON rating;
+CREATE POLICY "acesso_rating" ON rating FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE task ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_task" ON task;
+CREATE POLICY "acesso_task" ON task FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_activity_log" ON activity_log;
+CREATE POLICY "acesso_activity_log" ON activity_log FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE password_reset ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_password_reset" ON password_reset;
+CREATE POLICY "acesso_password_reset" ON password_reset FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE account_verification ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "acesso_account_verification" ON account_verification;
+CREATE POLICY "acesso_account_verification" ON account_verification FOR ALL USING (true) WITH CHECK (true);
 
 -- --------------------------------------------------------
 -- 6. USUÁRIOS INICIAIS
