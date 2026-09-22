@@ -5,7 +5,7 @@ import uuid
 
 from app_instance import app
 from models import db, User, PasswordReset, AccountVerification
-from utils import log_atividade, enviar_email
+from utils import log_atividade, enviar_email, email_template_ativacao, email_template_recuperacao, get_frontend_url
 
 # =========================
 # Login e Cadastro (API)
@@ -76,10 +76,12 @@ def api_cadastro():
     db.session.add(verif)
     db.session.commit()
 
-    # Como é API, o link ideal seria para o frontend (/verificar-conta no React)
-    link = request.host_url.rstrip('/') + f"/verificar-conta/{token}"
-    corpo = f"<p>Olá {username}, clique no link para ativar sua conta: <a href='{link}'>{link}</a></p>"
-    enviado = enviar_email(email, 'Ativação de Conta – SisCPTI', corpo)
+    # Gera o link apontando para o frontend React
+    # Em produção (Vercel), usa APP_URL. Localmente usa request.host_url.
+    base_url = get_frontend_url() or request.host_url.rstrip('/')
+    link = base_url + f"/verificar-conta/{token}"
+    corpo = email_template_ativacao(username, link)
+    enviado = enviar_email(email, 'Ative sua conta – SisCPTI', corpo)
 
     return jsonify({
         "status": "success", 
@@ -181,9 +183,10 @@ def api_recuperar_senha():
         db.session.add(reset)
         db.session.commit()
         
-        link = request.host_url.rstrip('/') + f"/redefinir-senha/{token}"
-        corpo = f"<p>Clique aqui para redefinir sua senha: <a href='{link}'>{link}</a></p>"
-        enviar_email(email, 'Recuperação de Senha', corpo)
+        base_url = get_frontend_url() or request.host_url.rstrip('/')
+        link = base_url + f"/redefinir-senha/{token}"
+        corpo = email_template_recuperacao(user.username, link)
+        enviar_email(email, 'Recuperação de Senha – SisCPTI', corpo)
         
     return jsonify({"status": "success", "message": "Se o e-mail existir, um link de recuperação foi enviado."})
 
