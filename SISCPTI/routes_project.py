@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, flash, session, abort, jsonify, send_file
+from flask import request, redirect, url_for, flash, session, abort, jsonify, send_file
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import os, uuid
@@ -198,7 +198,7 @@ def editar_candidatura(cand_id):
         flash("✅ Candidatura atualizada com sucesso!", "success")
         return redirect(url_for('perfil'))
         
-    return render_template('candidatura_editar.html', candidatura=cand)
+    return jsonify({"id": cand.id, "motivo": cand.motivo, "experiencia": cand.experiencia, "status": cand.status})
 
 @app.route('/perfil/candidatura/<int:cand_id>/cancelar')
 def cancelar_candidatura(cand_id):
@@ -258,15 +258,12 @@ def workspace(projeto_id):
         
     is_po_mode = (role in ['cliente', 'coordenador', 'empresa'])
     mensagens = Message.query.filter_by(projeto_id=projeto_id).order_by(Message.data_envio.asc()).all()
-    return render_template(
-        'workspace.html', 
-        projeto=projeto_db, 
-        membros=membros, 
-        mensagens=mensagens, 
-        is_owner=is_owner,
-        is_po_mode=is_po_mode,
-        role=role
-    )
+    return jsonify({
+        "status": "success",
+        "projeto": projeto_db.to_dict(),
+        "membros": membros,
+        "mensagens": [{"id": m.id, "username": m.username, "texto": m.texto, "data_envio": m.data_envio.strftime("%d/%m/%Y %H:%M") if m.data_envio else ""} for m in mensagens]
+    })
 
 @app.route('/projeto/<int:projeto_id>/workspace/enviar', methods=['POST'])
 def enviar_mensagem(projeto_id):
@@ -540,7 +537,7 @@ def submissao():
         flash("✅ Sua proposta de projeto foi submetida e será analisada!", "success")
         return redirect(url_for("submissao"))
 
-    return render_template('submissao.html')
+    return jsonify({"status": "ready"})
 
 @app.route('/submissao/editar/<int:sub_id>', methods=['GET', 'POST'])
 def editar_submissao(sub_id):
@@ -578,7 +575,16 @@ def editar_submissao(sub_id):
         flash("✅ Proposta de projeto atualizada com sucesso!", "success")
         return redirect(url_for("perfil"))
         
-    return render_template('submissao_editar.html', submissao=subm)
+    return jsonify({
+        "id": subm.id,
+        "nome_projeto": subm.nome_projeto,
+        "categoria": subm.categoria,
+        "descricao": subm.descricao,
+        "proponente": subm.proponente,
+        "email": subm.email,
+        "imagem": subm.imagem,
+        "status": subm.status
+    })
 
 @app.route('/submissao/excluir/<int:sub_id>')
 def excluir_submissao(sub_id):

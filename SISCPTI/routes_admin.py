@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, url_for, flash, session, abort, jsonify, Response
+from flask import request, redirect, url_for, flash, session, abort, jsonify, Response
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import json, os, uuid, io, csv
@@ -280,7 +280,7 @@ def novo_projeto():
         flash("✅ Projeto criado com sucesso!", "success")
         return redirect(url_for('admin_dashboard'))
 
-    return render_template('admin_form.html', projeto={})
+    return jsonify({"status": "ready", "projeto": {}})
 
 @app.route('/projeto/<int:projeto_id>/editar', methods=['GET', 'POST'])
 def editar_projeto(projeto_id):
@@ -329,7 +329,7 @@ def editar_projeto(projeto_id):
             return redirect(url_for('admin_dashboard'))
         return redirect(url_for('perfil'))
 
-    return render_template('admin_form.html', projeto=projeto_db.to_dict())
+    return jsonify(projeto_db.to_dict())
 
 @app.route('/admin/excluir/<int:projeto_id>')
 def excluir_projeto(projeto_id):
@@ -404,7 +404,20 @@ def admin_logs():
     if filtro_user:
         query = query.filter(ActivityLog.username.ilike(f'%{filtro_user}%'))
     logs_pag = query.paginate(page=page, per_page=30, error_out=False)
-    return render_template('admin_logs.html', logs=logs_pag, filtro_user=filtro_user)
+    return jsonify({
+        "logs": [
+            {
+                "id": l.id,
+                "username": l.username,
+                "acao": l.acao,
+                "detalhes": l.detalhes,
+                "data": l.data.strftime("%d/%m/%Y %H:%M") if l.data else ""
+            } for l in logs_pag.items
+        ],
+        "total": logs_pag.total,
+        "page": logs_pag.page,
+        "pages": logs_pag.pages
+    })
 
 # =========================
 # Painel do Coordenador
@@ -412,14 +425,18 @@ def admin_logs():
 @app.route('/coordenador')
 def coordenador_dashboard():
     if session.get('role') not in ['admin', 'coordenador']:
-        flash("Acesso restrito. Faça login como coordenador ou admin.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Acesso restrito."}), 403
         
     submissoes = Submission.query.all()
     projetos = Project.query.all()
     professores = User.query.filter_by(role='professor').all()
     
-    return render_template('coordenador_dashboard.html', submissoes=submissoes, projetos=projetos, professores=professores)
+    return jsonify({
+        "status": "success",
+        "submissoes": [{"id": s.id, "nome_projeto": s.nome_projeto, "categoria": s.categoria, "proponente": s.proponente, "status": s.status} for s in submissoes],
+        "projetos": [p.to_dict() for p in projetos],
+        "professores": [{"id": pr.id, "username": pr.username} for pr in professores]
+    })
 
 @app.route('/coordenador/projeto/<int:proj_id>/atribuir', methods=['POST'])
 def coordenador_atribuir_professor(proj_id):
