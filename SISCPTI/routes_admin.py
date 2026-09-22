@@ -63,10 +63,15 @@ def api_notificacoes():
     
     output = []
     for n in notifs:
+        # Bug 1: data_criacao pode ser None ou ter timezone (TIMESTAMPTZ do Postgres)
+        data_val = n.data_criacao
+        if data_val and hasattr(data_val, 'tzinfo') and data_val.tzinfo is not None:
+            data_val = data_val.replace(tzinfo=None)
+        data_str = data_val.strftime('%d/%m %H:%M') if data_val else ''
         output.append({
             "id": n.id,
             "mensagem": n.mensagem,
-            "data": n.data_criacao.strftime('%d/%m %H:%M'),
+            "data": data_str,
             "link": n.link
         })
     return jsonify({"status": "success", "data": output})
@@ -75,14 +80,15 @@ def api_notificacoes():
 def api_ler_notificacao(notif_id):
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
-        
-    n = Notification.query.get(notif_id)
+    
+    # Bug 2: HTTP 444 → 404  |  Bug 3: query.get() depreciado → db.session.get()
+    n = db.session.get(Notification, notif_id)
     if n and n.username == session['user']:
         n.lida = True
         db.session.commit()
         return jsonify({"status": "success"})
         
-    return jsonify({"error": "Notification not found"}), 444
+    return jsonify({"error": "Notification not found"}), 404
 
 @app.route('/api/notificacoes/ler-todas', methods=['POST'])
 def api_ler_todas_notificacoes():
@@ -90,7 +96,8 @@ def api_ler_todas_notificacoes():
         return jsonify({"error": "Unauthorized"}), 401
         
     username = session['user']
-    Notification.query.filter_by(username=username, lida=False).update({Notification.lida: True})
+    # Bug 4: chave deve ser string, não atributo do modelo
+    Notification.query.filter_by(username=username, lida=False).update({"lida": True})
     db.session.commit()
     return jsonify({"status": "success"})
 

@@ -53,6 +53,7 @@ export function Header() {
   };
 
   useEffect(() => {
+    if (!user) return; // Bug 5: não criar intervalo se não há usuário logado
     fetchNotificacoes();
     const interval = setInterval(fetchNotificacoes, 15000); // 15s polling
     return () => clearInterval(interval);
