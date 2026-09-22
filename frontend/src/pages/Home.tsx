@@ -13,54 +13,57 @@ export function Home() {
         <h2>Informações Importantes</h2>
 
         <p>
-          As disciplinas de <strong>Projeto Integrador (PI)</strong> e/ou <strong>Projeto Final (PF)</strong> têm como principal objetivo
+          As disciplinas de <strong>Projeto Integrador (PI)</strong> e <strong>Projeto Final (PF)</strong> têm como principal objetivo
           proporcionar aos alunos uma experiência prática e imersiva na resolução de problemas reais, em parceria com o
-          ambiente acadêmico do CEUB, empresas e organizações do terceiro setor.
+          ambiente acadêmico do UniCEUB, empresas parceiras e organizações do terceiro setor.
         </p>
 
         <p>
-          Durante um ou mais semestres, os discentes aplicam suas competências técnicas e metodológicas para desenvolver
-          uma solução tecnológica, validando hipóteses e funcionalidades. Além disso, o PI/PF fortalece habilidades
-          interpessoais e de gestão, preparando os estudantes para atuação em equipes e liderança de projetos.
+          Durante um ou mais semestres letivos, os discentes aplicam suas competências técnicas e metodológicas no desenvolvimento de
+          soluções tecnológicas, validando hipóteses e funcionalidades. Além disso, as disciplinas fortalecem habilidades
+          interpessoais e de gestão, preparando os estudantes para a atuação em equipe e o exercício da liderança de projetos.
         </p>
 
         <p>
-          É importante destacar que os projetos desenvolvidos podem não incluir suporte, manutenção ou continuidade garantida
-          após o período letivo. O foco das disciplinas é a <strong>experimentação</strong> e a <strong>validação de ideias</strong>,
-          permitindo que os estudantes enfrentem desafios reais e aprimorem suas habilidades técnicas e comportamentais
-          em ambiente acadêmico interligado ao mercado de trabalho.
+          É fundamental destacar que os projetos desenvolvidos podem não incluir suporte continuado, manutenção preventiva ou
+          garantia de continuidade após o término do período letivo. O foco central das disciplinas é a <strong>experimentação</strong> e
+          a <strong>validação de ideias</strong>, permitindo que os estudantes enfrentem desafios autênticos e aprimorem suas
+          competências técnicas e comportamentais em um ambiente acadêmico diretamente conectado às demandas do mercado de trabalho.
         </p>
 
         <p>
-          Para os <strong>parceiros internos ou externos</strong>, essa é uma oportunidade de transformar ideias em experimentos e
-          testar hipóteses. Os alunos envolvidos são profissionais em formação, com bases teórica e prática para contribuir no
-          desenvolvimento de soluções alinhadas às expectativas do mercado. Caso haja interesse na evolução do projeto,
-          o parceiro poderá sugerir novos desafios, compreendendo a natureza das atividades acadêmicas.
+          Para os <strong>parceiros internos e externos</strong>, esta é uma oportunidade estratégica de transformar ideias em experimentos
+          e testar novas hipóteses em ambiente controlado. Os alunos envolvidos são profissionais em formação, providos de sólida
+          fundamentação teórica e prática para contribuir para o desenvolvimento de soluções alinhadas às expectativas do mercado. Caso haja
+          interesse na continuidade ou evolução do projeto, o parceiro poderá propor novos desdobramentos, respeitando sempre a natureza
+          pedagógica e formativa das atividades acadêmicas.
         </p>
 
         <p>
-          Para os <strong>estudantes</strong>, o PI/PF representa uma experiência única, permitindo que vivenciem todas as etapas do
-          desenvolvimento de uma solução, desde a ideação até a entrega funcional. Essa vivência proporciona uma visão prática
-          do mercado e do impacto da tecnologia na sociedade.
+          Para os <strong>estudantes</strong>, o PI/PF representa uma jornada formativa transformadora, permitindo vivenciar todas as etapas
+          do ciclo de vida de uma solução tecnológica — desde a concepção e a ideação até a entrega funcional. Essa trajetória proporciona
+          uma compreensão prática da dinâmica de mercado e do impacto transformador da tecnologia na sociedade.
         </p>
 
         <p>
-          Para <strong>professores</strong>, a disciplina funciona como um <em>laboratório de inovação aplicada</em>, no qual conceitos
-          acadêmicos são testados e aprimorados na prática, utilizando metodologias ativas e ágeis.
+          Para os <strong>professores orientadores</strong>, a disciplina atua como um <em>laboratório de inovação aplicada</em>, no qual
+          conceitos teóricos e metodologias ágeis e ativas são testados, adaptados e consolidados na prática pedagógica.
         </p>
 
         <p>
-          Ao participar do PI/PF, todas as partes envolvidas compreendem que a entrega final poderá ser um
-          <strong>MVP (Produto Mínimo Viável)</strong>, uma <strong>Prova de Conceito (PoC)</strong> ou um
-          <strong>Protótipo Funcional</strong>, cujo principal objetivo é materializar ideias em soluções reais.
+          Ao participar do PI/PF, todas as partes compreendem que o resultado final poderá se concretizar como um
+          <strong>Produto Mínimo Viável (MVP)</strong>, uma <strong>Prova de Conceito (PoC)</strong> ou um
+          <strong>Protótipo Funcional</strong>, cujo propósito essencial é materializar ideias e hipóteses em soluções funcionais e verificáveis.
         </p>
 
         <p>
-          O sucesso do projeto não está apenas na entrega da solução, mas no aprendizado conjunto entre alunos, professores e
-          parceiros, além da validação de hipóteses relevantes que refletem desafios concretos em suas respectivas áreas de
-          atuação. Dessa forma, as disciplinas contribuem tanto para a formação profissional dos alunos quanto para a inovação no mercado.
+          O êxito de cada projeto não reside exclusivamente na entrega do artefato tecnológico, mas no aprendizado colaborativo
+          construído entre estudantes, docentes e parceiros, somado à validação de hipóteses que respondem a desafios concretos em suas
+          respectivas áreas de atuação. Dessa forma, as disciplinas contribuem expressivamente tanto para a formação profissional de excelência
+          dos alunos quanto para o fomento da inovação tecnológica na sociedade.
         </p>
       </section>
+
     </>
   );
 }
