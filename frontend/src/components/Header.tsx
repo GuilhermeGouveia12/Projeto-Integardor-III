@@ -232,7 +232,7 @@ export function Header() {
                         onClick={() => setMenuOpen(false)}
                         className="block px-4 py-2.5 text-purple-primary hover:bg-purple-primary/5 hover:text-purple-hover font-medium text-sm no-underline"
                       >
-                        👤 Meu Perfil
+                        {(user.role === 'admin' || user.role === 'coordenador') ? '👤 Meu Perfil' : '🎓 Painel do Aluno'}
                       </Link>
                       <Link 
                         to="/submissao" 

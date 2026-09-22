@@ -1,7 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+
+function getDashboardRoute(role?: string): string {
+  if (role === 'admin') return '/admin';
+  if (role === 'coordenador') return '/coordenador';
+  return '/perfil'; // Alunos, estudantes, orientadores e demais usuários
+}
 
 export function Login() {
   const [username, setUsername] = useState('');
@@ -10,8 +16,15 @@ export function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
+
+  // Se o usuário já estiver logado, redireciona diretamente para seu painel
+  useEffect(() => {
+    if (user) {
+      navigate(getDashboardRoute(user.role), { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,8 +34,9 @@ export function Login() {
     try {
       const response = await api.post('/login', { user: username.trim(), password });
       if (response.data.status === 'success') {
-        login(response.data.user);
-        navigate('/');
+        const loggedUser = response.data.user;
+        login(loggedUser);
+        navigate(getDashboardRoute(loggedUser.role));
       } else {
         setError(response.data.message || 'Credenciais inválidas. Verifique usuário e senha.');
       }
