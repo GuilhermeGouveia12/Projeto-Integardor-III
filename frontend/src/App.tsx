@@ -14,6 +14,7 @@ import { Submissao } from './pages/Submissao';
 import { Workspace } from './pages/Workspace';
 import { RecuperarSenha } from './pages/RecuperarSenha';
 import { RedefinirSenha } from './pages/RedefinirSenha';
+import { VerificarConta } from './pages/VerificarConta';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { CoordenadorDashboard } from './pages/CoordenadorDashboard';
 import { PerfilEditar } from './pages/PerfilEditar';
@@ -41,10 +42,12 @@ function App() {
               <Route path="/perfil/editar" element={<PerfilEditar />} />
               <Route path="/recuperar-senha" element={<RecuperarSenha />} />
               <Route path="/redefinir-senha/:token" element={<RedefinirSenha />} />
+              <Route path="/verificar-conta/:token" element={<VerificarConta />} />
               <Route path="/submissao" element={<Submissao />} />
               <Route path="/submissao/:id/editar" element={<SubmissaoEditar />} />
               <Route path="/candidatura/:id/editar" element={<CandidaturaEditar />} />
               <Route path="/projeto/:id" element={<ProjetoDetalhes />} />
+              <Route path="/projeto/:id/editar" element={<AdminForm />} />
               <Route path="/projeto/:id/candidatar" element={<Candidatura />} />
               <Route path="/workspace/:id" element={<Workspace />} />
               <Route path="/admin" element={<AdminDashboard />} />

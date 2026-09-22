@@ -124,29 +124,29 @@ def api_perfil():
         }
     })
 
-@app.route('/perfil/candidatura/<int:cand_id>/<acao>')
+@app.route('/api/perfil/candidatura/<int:cand_id>/<acao>', methods=['GET', 'POST'])
+@app.route('/perfil/candidatura/<int:cand_id>/<acao>', methods=['GET', 'POST'])
+@app.route('/api/admin/candidatura/<int:cand_id>/<acao>', methods=['GET', 'POST'])
+@app.route('/api/candidatura/<int:cand_id>/<acao>', methods=['GET', 'POST'])
 def dono_acao_candidatura(cand_id, acao):
     if not session.get('logged_in'):
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Não autenticado."}), 401
         
     cand = Application.query.get(cand_id)
     if not cand:
-        abort(404)
+        return jsonify({"status": "error", "message": "Candidatura não encontrada."}), 404
         
-    if cand.projeto.owner_username != session['user'] and session.get('role') != 'admin':
-        flash("Acesso negado.", "error")
-        return redirect(url_for('perfil'))
+    if cand.projeto.owner_username != session['user'] and session.get('role') not in ['admin', 'coordenador']:
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
         
     if acao == 'aprovar':
         cand.status = 'APROVADA'
         notif = Notification(
             username=cand.username,
             mensagem=f"🎉 Sua candidatura para o projeto '{cand.projeto.titulo}' foi APROVADA!",
-            link=f"/projeto/{cand.projeto_id}/workspace"
+            link=f"/workspace/{cand.projeto_id}"
         )
         db.session.add(notif)
-        if request.args.get('ajax') != '1':
-            flash(f"Candidatura de {cand.username} foi aprovada!", "success")
     elif acao == 'rejeitar':
         cand.status = 'REJEITADA'
         notif = Notification(
@@ -155,88 +155,96 @@ def dono_acao_candidatura(cand_id, acao):
             link="/perfil"
         )
         db.session.add(notif)
-        if request.args.get('ajax') != '1':
-            flash(f"Candidatura de {cand.username} foi rejeitada.", "error")
     elif acao == 'reavaliar':
         cand.status = 'PENDENTE'
-        if request.args.get('ajax') != '1':
-            flash(f"Candidatura de {cand.username} voltou para Pendente.", "info")
+    else:
+        return jsonify({"status": "error", "message": "Ação inválida."}), 400
         
     db.session.commit()
-    if request.args.get('ajax') == '1':
-        return jsonify({"status": "success", "new_status": cand.status})
-    
-    if session.get('role') == 'admin' and request.referrer and 'admin' in request.referrer:
-        return redirect(url_for('admin_dashboard'))
-        
-    return redirect(url_for('perfil'))
+    return jsonify({"status": "success", "new_status": cand.status, "message": f"Candidatura marcada como {cand.status}!"})
 
-@app.route('/perfil/candidatura/<int:cand_id>/editar', methods=['GET', 'POST'])
+@app.route('/api/candidatura/<int:cand_id>', methods=['GET'])
+def api_obter_candidatura(cand_id):
+    if not session.get('logged_in'):
+        return jsonify({"status": "error", "message": "Não autenticado."}), 401
+    cand = Application.query.get(cand_id)
+    if not cand:
+        return jsonify({"status": "error", "message": "Candidatura não encontrada."}), 404
+    if cand.username != session['user'] and session.get('role') != 'admin' and cand.projeto.owner_username != session['user']:
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
+    return jsonify({
+        "status": "success",
+        "candidatura": {
+            "id": cand.id,
+            "projeto_id": cand.projeto_id,
+            "projeto": {"id": cand.projeto.id, "titulo": cand.projeto.titulo} if cand.projeto else None,
+            "motivo": cand.motivo,
+            "experiencia": cand.experiencia,
+            "status": cand.status
+        }
+    })
+
+@app.route('/api/candidatura/<int:cand_id>/editar', methods=['POST', 'PUT'])
+@app.route('/perfil/candidatura/<int:cand_id>/editar', methods=['GET', 'POST', 'PUT'])
 def editar_candidatura(cand_id):
     if not session.get('logged_in'):
-        flash("⚠️ Você precisa estar logado.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Você precisa estar logado."}), 401
         
     cand = Application.query.get(cand_id)
     if not cand:
-        abort(404)
+        return jsonify({"status": "error", "message": "Candidatura não encontrada."}), 404
         
     # Apenas o dono ou admin pode editar
     if cand.username != session['user'] and session.get('role') != 'admin':
-        flash("⚠️ Acesso negado.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
         
     # Apenas se estiver pendente
     if cand.status != 'PENDENTE' and session.get('role') != 'admin':
-        flash("⚠️ Essa candidatura já foi avaliada e não pode mais ser editada.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Essa candidatura já foi avaliada e não pode mais ser editada."}), 400
         
-    if request.method == 'POST':
-        cand.motivo = request.form.get('motivo')
-        cand.experiencia = request.form.get('experiencia')
+    if request.method in ['POST', 'PUT']:
+        data = request.get_json(silent=True) or request.form
+        cand.motivo = data.get('motivo', cand.motivo)
+        cand.experiencia = data.get('experiencia', cand.experiencia)
         db.session.commit()
-        flash("✅ Candidatura atualizada com sucesso!", "success")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "success", "message": "Candidatura atualizada com sucesso!", "cand": {"id": cand.id, "motivo": cand.motivo, "experiencia": cand.experiencia, "status": cand.status}})
         
-    return jsonify({"id": cand.id, "motivo": cand.motivo, "experiencia": cand.experiencia, "status": cand.status})
+    return jsonify({"status": "success", "candidatura": {"id": cand.id, "motivo": cand.motivo, "experiencia": cand.experiencia, "status": cand.status}})
 
-@app.route('/perfil/candidatura/<int:cand_id>/cancelar')
+@app.route('/api/perfil/candidatura/<int:cand_id>/cancelar', methods=['POST', 'DELETE', 'GET'])
+@app.route('/perfil/candidatura/<int:cand_id>/cancelar', methods=['POST', 'DELETE', 'GET'])
 def cancelar_candidatura(cand_id):
     if not session.get('logged_in'):
-        flash("⚠️ Você precisa estar logado.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Você precisa estar logado."}), 401
         
     cand = Application.query.get(cand_id)
     if not cand:
-        abort(404)
+        return jsonify({"status": "error", "message": "Candidatura não encontrada."}), 404
         
     # Apenas o dono ou admin pode cancelar
     if cand.username != session['user'] and session.get('role') != 'admin':
-        flash("⚠️ Acesso negado.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
         
     # Apenas se estiver pendente
     if cand.status != 'PENDENTE' and session.get('role') != 'admin':
-        flash("⚠️ Essa candidatura já foi avaliada e não pode mais ser cancelada.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Essa candidatura já foi avaliada e não pode mais ser cancelada."}), 400
         
     db.session.delete(cand)
     db.session.commit()
-    flash("🗑️ Candidatura cancelada com sucesso!", "success")
-    return redirect(url_for('perfil'))
+    return jsonify({"status": "success", "message": "Candidatura cancelada com sucesso!"})
 
 # =========================
 # Workspace e Chat
 # =========================
+@app.route('/api/projeto/<int:projeto_id>/workspace')
 @app.route('/projeto/<int:projeto_id>/workspace')
 def workspace(projeto_id):
     if not session.get('logged_in'):
-        flash("Acesso negado.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Acesso negado. Faça login."}), 401
         
     projeto_db = Project.query.get(projeto_id)
     if not projeto_db:
-        abort(404)
+        return jsonify({"status": "error", "message": "Projeto não encontrado."}), 404
         
     username = session['user']
     user_obj = User.query.filter_by(username=username).first()
@@ -253,29 +261,69 @@ def workspace(projeto_id):
     membros = [c.username for c in equipe_cands]
     
     if not is_owner and not is_admin and not is_coord and not is_cliente_owner and username not in membros:
-        flash("Acesso negado. Você não é membro aprovado deste projeto.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Acesso negado. Você não é membro aprovado deste projeto."}), 403
         
-    is_po_mode = (role in ['cliente', 'coordenador', 'empresa'])
     mensagens = Message.query.filter_by(projeto_id=projeto_id).order_by(Message.data_envio.asc()).all()
     return jsonify({
         "status": "success",
         "projeto": projeto_db.to_dict(),
         "membros": membros,
-        "mensagens": [{"id": m.id, "username": m.username, "texto": m.texto, "data_envio": m.data_envio.strftime("%d/%m/%Y %H:%M") if m.data_envio else ""} for m in mensagens]
+        "mensagens": [{
+            "id": m.id,
+            "username": m.username,
+            "texto": m.texto,
+            "arquivo": m.arquivo,
+            "data_envio": m.data_envio.strftime("%d/%m/%Y %H:%M") if m.data_envio else ""
+        } for m in mensagens]
     })
 
-@app.route('/projeto/<int:projeto_id>/workspace/enviar', methods=['POST'])
-def enviar_mensagem(projeto_id):
+@app.route('/api/projeto/<int:projeto_id>/workspace/mensagens')
+@app.route('/projeto/<int:projeto_id>/workspace/mensagens')
+def workspace_mensagens_json(projeto_id):
     if not session.get('logged_in'):
-        return redirect(url_for('login'))
+        return jsonify({"error": "Unauthorized"}), 401
         
     projeto_db = Project.query.get(projeto_id)
     if not projeto_db:
-        abort(404)
+        return jsonify({"error": "Project not found"}), 404
+        
+    username = session['user']
+    is_owner = (projeto_db.owner_username == username)
+    is_admin = (session.get('role') == 'admin')
+    
+    equipe_cands = Application.query.filter_by(projeto_id=projeto_id, status='APROVADA').all()
+    membros = [c.username for c in equipe_cands]
+    
+    if not is_owner and not is_admin and username not in membros:
+        return jsonify({"error": "Forbidden"}), 403
+        
+    mensagens = Message.query.filter_by(projeto_id=projeto_id).order_by(Message.data_envio.asc()).all()
+    output = []
+    for msg in mensagens:
+        output.append({
+            "id": msg.id,
+            "username": msg.username,
+            "texto": msg.texto,
+            "arquivo": msg.arquivo,
+            "data_envio": msg.data_envio.strftime('%d/%m %H:%M') if msg.data_envio else ""
+        })
+    return jsonify(output)
+
+@app.route('/api/projeto/<int:projeto_id>/workspace/enviar', methods=['POST'])
+@app.route('/api/projeto/<int:projeto_id>/workspace/enviar_ajax', methods=['POST'])
+@app.route('/projeto/<int:projeto_id>/workspace/enviar', methods=['POST'])
+@app.route('/projeto/<int:projeto_id>/workspace/enviar_ajax', methods=['POST'])
+def enviar_mensagem_ajax(projeto_id):
+    if not session.get('logged_in'):
+        return jsonify({"status": "error", "message": "Não autenticado"}), 401
+        
+    projeto_db = Project.query.get(projeto_id)
+    if not projeto_db:
+        return jsonify({"status": "error", "message": "Projeto não encontrado"}), 404
         
     username = session['user']
     user_obj = User.query.filter_by(username=username).first()
+    
     is_orientador = (projeto_db.professor_id == user_obj.id if user_obj and projeto_db.professor_id else False)
     is_owner = (projeto_db.owner_username == username) or is_orientador
     role = session.get('role')
@@ -287,9 +335,10 @@ def enviar_mensagem(projeto_id):
     membros = [c.username for c in equipe_cands]
     
     if not is_owner and not is_admin and not is_coord and not is_cliente_owner and username not in membros:
-        abort(403)
+        return jsonify({"status": "error", "message": "Acesso negado"}), 403
         
-    texto = request.form.get('texto')
+    data = request.get_json(silent=True) or request.form
+    texto = data.get('texto')
     arquivo_path = None
     if 'arquivo' in request.files:
         file = request.files['arquivo']
@@ -321,103 +370,7 @@ def enviar_mensagem(projeto_id):
                     notif = Notification(
                         username=mention,
                         mensagem=f"Você foi mencionado por @{username} no chat do projeto '{projeto_db.titulo}'",
-                        link=url_for('workspace', projeto_id=projeto_id),
-                        lida=False
-                    )
-                    db.session.add(notif)
-            db.session.commit()
-        
-    return redirect(url_for('workspace', projeto_id=projeto_id))
-
-@app.route('/projeto/<int:projeto_id>/workspace/mensagens')
-def workspace_mensagens_json(projeto_id):
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-        
-    projeto_db = Project.query.get(projeto_id)
-    if not projeto_db:
-        return jsonify({"error": "Project not found"}), 444
-        
-    username = session['user']
-    is_owner = (projeto_db.owner_username == username)
-    is_admin = (session.get('role') == 'admin')
-    
-    equipe_cands = Application.query.filter_by(projeto_id=projeto_id, status='APROVADA').all()
-    membros = [c.username for c in equipe_cands]
-    
-    if not is_owner and not is_admin and username not in membros:
-        return jsonify({"error": "Forbidden"}), 403
-        
-    mensagens = Message.query.filter_by(projeto_id=projeto_id).order_by(Message.data_envio.asc()).all()
-    output = []
-    for msg in mensagens:
-        output.append({
-            "id": msg.id,
-            "username": msg.username,
-            "texto": msg.texto,
-            "arquivo": msg.arquivo,
-            "data_envio": msg.data_envio.strftime('%d/%m %H:%M')
-        })
-    return jsonify(output)
-
-@app.route('/projeto/<int:projeto_id>/workspace/enviar_ajax', methods=['POST'])
-def enviar_mensagem_ajax(projeto_id):
-    if not session.get('logged_in'):
-        return jsonify({"error": "Unauthorized"}), 401
-        
-    projeto_db = Project.query.get(projeto_id)
-    if not projeto_db:
-        return jsonify({"error": "Project not found"}), 444
-        
-    username = session['user']
-    user_obj = User.query.filter_by(username=username).first()
-    
-    is_orientador = (projeto_db.professor_id == user_obj.id if user_obj and projeto_db.professor_id else False)
-    is_owner = (projeto_db.owner_username == username) or is_orientador
-    role = session.get('role')
-    is_admin = (role == 'admin')
-    is_coord = (role == 'coordenador')
-    is_cliente_owner = (role in ['cliente', 'empresa'] and projeto_db.owner_username == username)
-    
-    equipe_cands = Application.query.filter_by(projeto_id=projeto_id, status='APROVADA').all()
-    membros = [c.username for c in equipe_cands]
-    
-    if not is_owner and not is_admin and not is_coord and not is_cliente_owner and username not in membros:
-        return jsonify({"error": "Forbidden"}), 403
-        
-    texto = request.form.get('texto')
-    arquivo_path = None
-    if 'arquivo' in request.files:
-        file = request.files['arquivo']
-        if file and file.filename != '':
-            arquivo_path = upload_file_to_supabase(file)
-            
-    if texto or arquivo_path:
-        nova_msg = Message(
-            projeto_id=projeto_id,
-            username=session['user'],
-            texto=texto,
-            arquivo=arquivo_path
-        )
-        db.session.add(nova_msg)
-        db.session.commit()
-        
-        # Parse mentions
-        if texto:
-            import re
-            valid_users = {projeto_db.owner_username} if projeto_db.owner_username else set()
-            if projeto_db.orientador:
-                valid_users.add(projeto_db.orientador.username)
-            for m in membros:
-                valid_users.add(m)
-                
-            mentions = re.findall(r'@([a-zA-Z0-9_\-\.]+)', texto)
-            for mention in set(mentions):
-                if mention in valid_users and mention != username:
-                    notif = Notification(
-                        username=mention,
-                        mensagem=f"Você foi mencionado por @{username} no chat do projeto '{projeto_db.titulo}'",
-                        link=url_for('workspace', projeto_id=projeto_id),
+                        link=f"/workspace/{projeto_id}",
                         lida=False
                     )
                     db.session.add(notif)
@@ -428,7 +381,7 @@ def enviar_mensagem_ajax(projeto_id):
             "username": nova_msg.username,
             "texto": nova_msg.texto,
             "arquivo": nova_msg.arquivo,
-            "data_envio": nova_msg.data_envio.strftime('%d/%m %H:%M')
+            "data_envio": nova_msg.data_envio.strftime('%d/%m/%Y %H:%M') if nova_msg.data_envio else ""
         }
         
         return jsonify({
@@ -436,31 +389,39 @@ def enviar_mensagem_ajax(projeto_id):
             "message": msg_dict
         })
         
-    return jsonify({"error": "Empty message"}), 400
+    return jsonify({"status": "error", "message": "Mensagem vazia"}), 400
 
 # =========================
 # Sistema de Avaliações
 # =========================
+@app.route('/api/projeto/<int:projeto_id>/avaliar', methods=['POST'])
 @app.route('/projeto/<int:projeto_id>/avaliar', methods=['POST'])
 def avaliar_projeto(projeto_id):
     if not session.get('logged_in'):
-        return jsonify({'error': 'Não autenticado'}), 401
+        return jsonify({'status': 'error', 'message': 'Não autenticado'}), 401
 
     proj = Project.query.get(projeto_id)
     if not proj:
-        abort(404)
+        return jsonify({'status': 'error', 'message': 'Projeto não encontrado'}), 404
 
-    nota = request.form.get('nota', type=int)
-    nota_org = request.form.get('nota_organizacao', 5, type=int)
-    nota_ori = request.form.get('nota_orientacao', 5, type=int)
-    nota_apr = request.form.get('nota_aprendizado', 5, type=int)
-    comentario = request.form.get('comentario', '').strip()
+    data = request.get_json(silent=True) or request.form
+    try:
+        nota = int(data.get('nota', 0))
+    except (ValueError, TypeError):
+        nota = 0
+        
+    try: nota_org = int(data.get('nota_organizacao', 5))
+    except: nota_org = 5
+    try: nota_ori = int(data.get('nota_orientacao', 5))
+    except: nota_ori = 5
+    try: nota_apr = int(data.get('nota_aprendizado', 5))
+    except: nota_apr = 5
+    
+    comentario = str(data.get('comentario', '')).strip()
 
-    if not nota or nota < 1 or nota > 5:
-        flash("⚠️ Nota inválida. Escolha entre 1 e 5 estrelas.", "error")
-        return redirect(url_for('projeto_detalhes', projeto_id=projeto_id))
+    if nota < 1 or nota > 5:
+        return jsonify({'status': 'error', 'message': 'Nota inválida. Escolha entre 1 e 5 estrelas.'}), 400
 
-    # Verifica se usuário já avaliou
     ja_avaliou = Rating.query.filter_by(projeto_id=projeto_id, username=session['user']).first()
     if ja_avaliou:
         ja_avaliou.nota = nota
@@ -469,7 +430,7 @@ def avaliar_projeto(projeto_id):
         ja_avaliou.nota_aprendizado = nota_apr
         ja_avaliou.comentario = comentario
         ja_avaliou.data_criacao = datetime.utcnow()
-        flash("✅ Avaliação atualizada com sucesso!", "success")
+        msg = "Avaliação atualizada com sucesso!"
     else:
         rating = Rating(
             projeto_id=projeto_id, 
@@ -481,11 +442,11 @@ def avaliar_projeto(projeto_id):
             comentario=comentario
         )
         db.session.add(rating)
-        flash("✅ Avaliação enviada com sucesso!", "success")
+        msg = "Avaliação enviada com sucesso!"
 
     db.session.commit()
     log_atividade(session['user'], 'Avaliação enviada', f'Projeto #{projeto_id}, nota {nota}')
-    return redirect(url_for('projeto_detalhes', projeto_id=projeto_id))
+    return jsonify({'status': 'success', 'message': msg})
 
 @app.route('/api/projeto/<int:projeto_id>/avaliacoes')
 def api_avaliacoes(projeto_id):
@@ -506,15 +467,16 @@ def api_avaliacoes(projeto_id):
     })
 
 # =========================
-# Submissão de projetos (restrita a logados)
+# Submissão de projetos
 # =========================
+@app.route('/api/submissao', methods=['POST'])
 @app.route('/submissao', methods=['GET', 'POST'])
 def submissao():
     if not session.get('logged_in'):
-        flash("⚠️ Você precisa estar logado para acessar a submissão de projetos.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Você precisa estar logado para acessar a submissão de projetos."}), 401
 
     if request.method == 'POST':
+        data = request.get_json(silent=True) or request.form
         imagem_path = None
         if 'logo' in request.files:
             file = request.files['logo']
@@ -522,49 +484,63 @@ def submissao():
                 imagem_path = upload_file_to_supabase(file)
 
         nova_submissao = Submission(
-            nome_projeto=request.form.get("nome_projeto"),
-            categoria=request.form.get("categoria"),
-            descricao=request.form.get("descricao"),
-            proponente=request.form.get("proponente"),
-            email=request.form.get("email"),
-            status=request.form.get("status") or "EM ANÁLISE",
+            nome_projeto=data.get("nome_projeto"),
+            categoria=data.get("categoria"),
+            descricao=data.get("descricao"),
+            proponente=data.get("proponente"),
+            email=data.get("email"),
+            status=data.get("status") or "EM ANÁLISE",
             username=session['user'],
             imagem=imagem_path
         )
         db.session.add(nova_submissao)
         db.session.commit()
 
-        flash("✅ Sua proposta de projeto foi submetida e será analisada!", "success")
-        return redirect(url_for("submissao"))
+        return jsonify({
+            "status": "success", 
+            "message": "Sua proposta de projeto foi submetida e será analisada!",
+            "id": nova_submissao.id,
+            "submissao": nova_submissao.to_dict()
+        })
 
     return jsonify({"status": "ready"})
 
-@app.route('/submissao/editar/<int:sub_id>', methods=['GET', 'POST'])
+@app.route('/api/submissao/<int:sub_id>', methods=['GET'])
+def obter_submissao(sub_id):
+    if not session.get('logged_in'):
+        return jsonify({"status": "error", "message": "Você precisa estar logado."}), 401
+    subm = Submission.query.get(sub_id)
+    if not subm:
+        return jsonify({"status": "error", "message": "Proposta não encontrada."}), 404
+    if subm.username != session['user'] and session.get('role') not in ['admin', 'coordenador']:
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
+    return jsonify({"status": "success", "submissao": subm.to_dict()})
+
+@app.route('/api/submissao/<int:sub_id>/editar', methods=['POST', 'PUT'])
+@app.route('/submissao/editar/<int:sub_id>', methods=['GET', 'POST', 'PUT'])
 def editar_submissao(sub_id):
     if not session.get('logged_in'):
-        flash("⚠️ Você precisa estar logado.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Você precisa estar logado."}), 401
         
     subm = Submission.query.get(sub_id)
     if not subm:
-        abort(404)
+        return jsonify({"status": "error", "message": "Proposta não encontrada."}), 404
         
     # Apenas o dono ou admin pode editar
     if subm.username != session['user'] and session.get('role') != 'admin':
-        flash("⚠️ Acesso negado.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
         
     # Apenas se estiver em análise
     if subm.status != 'EM ANÁLISE' and session.get('role') != 'admin':
-        flash("⚠️ Essa proposta já foi avaliada e não pode mais ser editada.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Essa proposta já foi avaliada e não pode mais ser editada."}), 400
         
-    if request.method == 'POST':
-        subm.nome_projeto = request.form.get("nome_projeto")
-        subm.categoria = request.form.get("categoria")
-        subm.descricao = request.form.get("descricao")
-        subm.proponente = request.form.get("proponente")
-        subm.email = request.form.get("email")
+    if request.method in ['POST', 'PUT']:
+        data = request.get_json(silent=True) or request.form
+        if 'nome_projeto' in data: subm.nome_projeto = data.get("nome_projeto")
+        if 'categoria' in data: subm.categoria = data.get("categoria")
+        if 'descricao' in data: subm.descricao = data.get("descricao")
+        if 'proponente' in data: subm.proponente = data.get("proponente")
+        if 'email' in data: subm.email = data.get("email")
         
         if 'logo' in request.files:
             file = request.files['logo']
@@ -572,44 +548,31 @@ def editar_submissao(sub_id):
                 subm.imagem = upload_file_to_supabase(file)
                 
         db.session.commit()
-        flash("✅ Proposta de projeto atualizada com sucesso!", "success")
-        return redirect(url_for("perfil"))
+        return jsonify({"status": "success", "message": "Proposta de projeto atualizada com sucesso!", "submissao": subm.to_dict()})
         
-    return jsonify({
-        "id": subm.id,
-        "nome_projeto": subm.nome_projeto,
-        "categoria": subm.categoria,
-        "descricao": subm.descricao,
-        "proponente": subm.proponente,
-        "email": subm.email,
-        "imagem": subm.imagem,
-        "status": subm.status
-    })
+    return jsonify({"status": "success", "submissao": subm.to_dict()})
 
-@app.route('/submissao/excluir/<int:sub_id>')
+@app.route('/api/submissao/<int:sub_id>/excluir', methods=['POST', 'DELETE', 'GET'])
+@app.route('/submissao/excluir/<int:sub_id>', methods=['POST', 'DELETE', 'GET'])
 def excluir_submissao(sub_id):
     if not session.get('logged_in'):
-        flash("⚠️ Você precisa estar logado.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Você precisa estar logado."}), 401
         
     subm = Submission.query.get(sub_id)
     if not subm:
-        abort(404)
+        return jsonify({"status": "error", "message": "Proposta não encontrada."}), 404
         
     # Apenas o dono ou admin pode excluir
     if subm.username != session['user'] and session.get('role') != 'admin':
-        flash("⚠️ Acesso negado.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Acesso negado."}), 403
         
     # Apenas se estiver em análise
     if subm.status != 'EM ANÁLISE' and session.get('role') != 'admin':
-        flash("⚠️ Essa proposta já foi avaliada e não pode mais ser excluída.", "error")
-        return redirect(url_for('perfil'))
+        return jsonify({"status": "error", "message": "Essa proposta já foi avaliada e não pode mais ser excluída."}), 400
         
     db.session.delete(subm)
     db.session.commit()
-    flash("🗑️ Proposta de projeto excluída com sucesso!", "success")
-    return redirect(url_for("perfil"))
+    return jsonify({"status": "success", "message": "Proposta de projeto excluída com sucesso!"})
 
 # ==========================================
 # Geração de Certificados PDF (ReportLab)
@@ -820,11 +783,14 @@ def api_criar_task(projeto_id):
     if not is_owner and not is_admin and not is_lider:
         return jsonify({"error": "Apenas Líderes (Scrum Master), Administradores ou Orientadores podem criar tarefas."}), 403
         
-    titulo = request.form.get('titulo')
-    descricao = request.form.get('descricao')
-    assigned_username = request.form.get('assigned_username')
-    deadline_str = request.form.get('deadline')
-    checklist_str = request.form.get('checklist')
+    data = request.get_json(silent=True) or request.form
+    titulo = data.get('titulo')
+    descricao = data.get('descricao')
+    assigned_username = data.get('assigned_username')
+    deadline_str = data.get('deadline')
+    checklist_str = data.get('checklist')
+    if isinstance(checklist_str, list):
+        checklist_str = json.dumps(checklist_str)
     
     if not titulo:
         return jsonify({"error": "Título é obrigatório"}), 400
@@ -893,7 +859,8 @@ def api_mover_task(projeto_id, task_id):
     if not is_owner and not is_admin and not is_member:
         return jsonify({"error": "Acesso negado."}), 403
         
-    novo_status = request.form.get('status')
+    data = request.get_json(silent=True) or request.form
+    novo_status = data.get('status')
     if novo_status not in ['todo', 'doing', 'done']:
         return jsonify({"error": "Status inválido"}), 400
         
@@ -906,7 +873,7 @@ def api_mover_task(projeto_id, task_id):
     db.session.commit()
     return jsonify({"status": "success", "task_id": task.id, "new_status": task.status})
 
-@app.route('/api/projeto/<int:projeto_id>/tasks/<int:task_id>/editar', methods=['POST'])
+@app.route('/api/projeto/<int:projeto_id>/tasks/<int:task_id>/editar', methods=['POST', 'PUT'])
 def api_editar_task(projeto_id, task_id):
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
@@ -935,23 +902,28 @@ def api_editar_task(projeto_id, task_id):
     if not is_owner and not is_admin and not is_lider:
         return jsonify({"error": "Apenas Líderes, Administradores ou Orientadores podem editar tarefas."}), 403
         
-    titulo = request.form.get('titulo')
-    descricao = request.form.get('descricao')
-    assigned_username = request.form.get('assigned_username')
-    deadline_str = request.form.get('deadline')
-    checklist_str = request.form.get('checklist')
+    data = request.get_json(silent=True) or request.form
+    titulo = data.get('titulo')
+    descricao = data.get('descricao')
+    assigned_username = data.get('assigned_username')
+    deadline_str = data.get('deadline')
+    checklist_str = data.get('checklist')
+    if isinstance(checklist_str, list):
+        checklist_str = json.dumps(checklist_str)
     
     if titulo:
         task.titulo = titulo
-    task.descricao = descricao
-    task.assigned_username = assigned_username if assigned_username else None
+    if descricao is not None:
+        task.descricao = descricao
+    if 'assigned_username' in data:
+        task.assigned_username = assigned_username if assigned_username else None
     
     if deadline_str:
         try:
             task.deadline = datetime.strptime(deadline_str, '%Y-%m-%d').date()
         except ValueError:
             task.deadline = None
-    else:
+    elif 'deadline' in data and not deadline_str:
         task.deadline = None
         
     if checklist_str is not None:
@@ -972,7 +944,8 @@ def api_editar_task(projeto_id, task_id):
         }
     })
 
-@app.route('/api/projeto/<int:projeto_id>/tasks/<int:task_id>/excluir', methods=['POST'])
+@app.route('/api/projeto/<int:projeto_id>/tasks/<int:task_id>/excluir', methods=['POST', 'DELETE'])
+@app.route('/api/projeto/<int:projeto_id>/tasks/<int:task_id>', methods=['DELETE'])
 def api_excluir_task(projeto_id, task_id):
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401

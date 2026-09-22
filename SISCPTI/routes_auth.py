@@ -127,13 +127,15 @@ def api_me():
         }
     })
 
-@app.route('/api/perfil/editar', methods=['PUT'])
+@app.route('/api/perfil/editar', methods=['POST', 'PUT'])
 def api_perfil_editar():
     if not session.get('logged_in'):
         return jsonify({"status": "error", "message": "Não autenticado"}), 401
 
     user = User.query.filter_by(username=session['user']).first()
     data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "Dados não enviados"}), 400
     
     email = data.get('email', '').strip()
     bio = data.get('bio', '').strip()
@@ -153,7 +155,17 @@ def api_perfil_editar():
         user.password = generate_password_hash(nova_senha)
 
     db.session.commit()
-    return jsonify({"status": "success", "message": "Perfil atualizado com sucesso!"})
+    return jsonify({
+        "status": "success", 
+        "message": "Perfil atualizado com sucesso!",
+        "user": {
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "bio": user.bio,
+            "interesses": user.interesses
+        }
+    })
 
 @app.route('/api/recuperar-senha', methods=['POST'])
 def api_recuperar_senha():

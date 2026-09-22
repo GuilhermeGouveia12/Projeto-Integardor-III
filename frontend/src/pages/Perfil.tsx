@@ -13,24 +13,66 @@ export function Perfil() {
   const [recomendacoes, setRecomendacoes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchPerfil = async () => {
-      try {
-        const response = await api.get('/perfil');
-        if (response.data.status === 'success') {
-          setMinhasCandidaturas(response.data.data.minhas_candidaturas || []);
-          setMinhasSubmissoes(response.data.data.minhas_submissoes || []);
-          setMeusProjetos(response.data.data.meus_projetos || []);
-          setRecomendacoes(response.data.data.recomendacoes || []);
-        }
-      } catch (error) {
-        console.error("Erro ao carregar o perfil", error);
-      } finally {
-        setLoading(false);
+  const fetchPerfil = async () => {
+    try {
+      const response = await api.get('/perfil');
+      if (response.data.status === 'success') {
+        setMinhasCandidaturas(response.data.data.minhas_candidaturas || []);
+        setMinhasSubmissoes(response.data.data.minhas_submissoes || []);
+        setMeusProjetos(response.data.data.meus_projetos || []);
+        setRecomendacoes(response.data.data.recomendacoes || []);
       }
-    };
+    } catch (error) {
+      console.error("Erro ao carregar o perfil", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPerfil();
   }, []);
+
+  const handleCancelarCandidatura = async (candId: number) => {
+    if (!window.confirm('Tem certeza que deseja cancelar sua candidatura?')) return;
+    try {
+      const res = await api.post(`/perfil/candidatura/${candId}/cancelar`);
+      if (res.data.status === 'success' || res.status === 200) {
+        setMinhasCandidaturas(prev => prev.filter(c => c.id !== candId));
+        alert('✅ Candidatura cancelada com sucesso!');
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Erro ao cancelar candidatura.');
+    }
+  };
+
+  const handleExcluirSubmissao = async (subId: number) => {
+    if (!window.confirm('Tem certeza que deseja excluir esta proposta?')) return;
+    try {
+      const res = await api.post(`/submissao/${subId}/excluir`);
+      if (res.data.status === 'success' || res.status === 200) {
+        setMinhasSubmissoes(prev => prev.filter(s => s.id !== subId));
+        alert('✅ Proposta excluída com sucesso!');
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Erro ao excluir proposta.');
+    }
+  };
+
+  const handleAcaoCandidato = async (candId: number, acao: 'aprovar' | 'rejeitar' | 'reavaliar', projId: number) => {
+    try {
+      const res = await api.post(`/perfil/candidatura/${candId}/${acao}`);
+      if (res.data.status === 'success' && res.data.new_status) {
+        setMeusProjetos(prev => prev.map(p => {
+          if (p.id !== projId) return p;
+          const newCands = (p.candidaturas || []).map((c: any) => c.id === candId ? { ...c, status: res.data.new_status } : c);
+          return { ...p, candidaturas: newCands };
+        }));
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || `Erro ao ${acao} candidatura.`);
+    }
+  };
 
   if (!user) return null;
 
@@ -169,7 +211,7 @@ export function Perfil() {
                               <span className="inline-block px-2 py-1 rounded-full text-xs font-bold uppercase bg-bg-primary text-[#ff9800]">{cand.status}</span>
                               <div className="mt-2 flex gap-1.5">
                                 <Link to={`/candidatura/${cand.id}/editar`} className="inline-block bg-[#ff9800] text-white px-3 py-1.5 rounded text-[0.85rem] no-underline hover:opacity-80 transition-opacity">Editar</Link>
-                                <button className="border-none bg-[#dc3545] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Cancelar</button>
+                                <button onClick={() => handleCancelarCandidatura(cand.id)} className="border-none bg-[#dc3545] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Cancelar</button>
                               </div>
                             </>
                           )}
@@ -215,7 +257,7 @@ export function Perfil() {
                           {subm.status === 'EM ANÁLISE' ? (
                             <div className="flex gap-1.5">
                               <Link to={`/submissao/${subm.id}/editar`} className="inline-block bg-[#ff9800] text-white px-3 py-1.5 rounded text-[0.85rem] no-underline hover:opacity-80 transition-opacity">Editar</Link>
-                              <button className="border-none bg-[#dc3545] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Excluir</button>
+                              <button onClick={() => handleExcluirSubmissao(subm.id)} className="border-none bg-[#dc3545] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Excluir</button>
                             </div>
                           ) : (
                             <span className="text-[0.85rem] text-text-secondary italic">Já avaliado</span>
@@ -275,11 +317,11 @@ export function Perfil() {
                             <td className="p-3.5 border-b border-border-color align-top">
                               {cand.status === 'PENDENTE' ? (
                                 <div className="flex gap-1.5">
-                                  <button className="border-none bg-[#28a745] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Aceitar</button>
-                                  <button className="border-none bg-[#dc3545] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Recusar</button>
+                                  <button onClick={() => handleAcaoCandidato(cand.id, 'aprovar', proj.id)} className="border-none bg-[#28a745] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Aceitar</button>
+                                  <button onClick={() => handleAcaoCandidato(cand.id, 'rejeitar', proj.id)} className="border-none bg-[#dc3545] text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Recusar</button>
                                 </div>
                               ) : (
-                                <button className="border-none bg-purple-primary text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Reavaliar</button>
+                                <button onClick={() => handleAcaoCandidato(cand.id, 'reavaliar', proj.id)} className="border-none bg-purple-primary text-white px-3 py-1.5 rounded text-[0.85rem] cursor-pointer hover:opacity-80 transition-opacity">Reavaliar</button>
                               )}
                             </td>
                           </tr>

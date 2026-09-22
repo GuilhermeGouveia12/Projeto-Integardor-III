@@ -18,14 +18,31 @@ export function AdminUserForm() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const carregarUsuario = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get(`/admin/usuario/${id}`);
+        if (res.data.status === 'success' && res.data.user) {
+          setFormData({
+            username: res.data.user.username || '',
+            password: '',
+            role: res.data.user.role || 'user'
+          });
+        } else {
+          setError(res.data.message || 'Erro ao carregar usuário');
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Erro ao carregar usuário.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (id) {
-      setFormData({
-        username: 'usuario_teste',
-        password: '',
-        role: 'user'
-      });
+      carregarUsuario();
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, [id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {

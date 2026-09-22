@@ -20,16 +20,30 @@ export function SubmissaoEditar() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fake fetch to avoid blank screen
-    setFormData({
-      nome_projeto: 'Projeto Original',
-      categoria: 'Responsabilidade Social',
-      descricao: 'Descrição original.',
-      proponente: 'Empresa Teste',
-      email: 'contato@teste.com',
-      imagem: 'default.png'
-    });
-    setLoading(false);
+    const carregarSubmissao = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get(`/submissao/${id}`);
+        if (res.data.status === 'success' && res.data.submissao) {
+          const s = res.data.submissao;
+          setFormData({
+            nome_projeto: s.nome_projeto || '',
+            categoria: s.categoria || '',
+            descricao: s.descricao || '',
+            proponente: s.proponente || '',
+            email: s.email || '',
+            imagem: s.imagem || ''
+          });
+        } else {
+          setError(res.data.message || 'Erro ao carregar proposta');
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Erro ao carregar proposta.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (id) carregarSubmissao();
   }, [id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

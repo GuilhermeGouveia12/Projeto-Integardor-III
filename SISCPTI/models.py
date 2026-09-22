@@ -52,6 +52,7 @@ class Project(db.Model):
             except Exception:
                 links_val = {}
 
+        cands_aprovadas = len([c for c in self.candidaturas if c.status == 'APROVADA']) if hasattr(self, 'candidaturas') and self.candidaturas else 0
         return {
             "id": self.id,
             "titulo": self.titulo,
@@ -62,7 +63,11 @@ class Project(db.Model):
             "imagem": self.imagem,
             "detalhes": detalhes_val,
             "links": links_val,
-            "owner_username": self.owner_username
+            "owner_username": self.owner_username,
+            "tags": self.tags or "",
+            "professor_id": self.professor_id,
+            "orientador": {"id": self.orientador.id, "username": self.orientador.username} if self.orientador else None,
+            "candidaturas_aprovadas": cands_aprovadas
         }
 
 class Submission(db.Model):
@@ -77,6 +82,20 @@ class Submission(db.Model):
     imagem = db.Column(db.String(200), nullable=True)
     tags = db.Column(db.String(300), nullable=True, default='')
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "nome_projeto": self.nome_projeto,
+            "categoria": self.categoria,
+            "descricao": self.descricao,
+            "proponente": self.proponente,
+            "email": self.email,
+            "status": self.status,
+            "username": self.username,
+            "imagem": self.imagem,
+            "tags": self.tags or ""
+        }
+
 class Application(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     projeto_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
@@ -86,6 +105,17 @@ class Application(db.Model):
     status = db.Column(db.String(50), nullable=False, default='PENDENTE')
     
     projeto = db.relationship('Project', backref=db.backref('candidaturas', lazy=True))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "projeto_id": self.projeto_id,
+            "projeto": {"id": self.projeto.id, "titulo": self.projeto.titulo} if self.projeto else None,
+            "username": self.username,
+            "motivo": self.motivo,
+            "experiencia": self.experiencia,
+            "status": self.status
+        }
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -149,3 +179,23 @@ class Task(db.Model):
     completed_at = db.Column(db.DateTime, nullable=True)
     
     projeto = db.relationship('Project', backref=db.backref('tasks', lazy=True))
+
+    def to_dict(self):
+        checklist_val = []
+        if self.checklist:
+            try:
+                checklist_val = json.loads(self.checklist)
+            except Exception:
+                checklist_val = []
+        return {
+            "id": self.id,
+            "projeto_id": self.projeto_id,
+            "titulo": self.titulo,
+            "descricao": self.descricao or "",
+            "status": self.status,
+            "assigned_username": self.assigned_username or "",
+            "deadline": self.deadline.strftime('%Y-%m-%d') if self.deadline else "",
+            "checklist": checklist_val,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None
+        }

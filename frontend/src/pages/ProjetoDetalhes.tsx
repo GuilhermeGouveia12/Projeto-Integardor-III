@@ -3,28 +3,77 @@ import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useParams, Link } from 'react-router-dom';
 
+interface Avaliacao {
+  username: string;
+  nota: number;
+  comentario: string;
+  data: string;
+}
+
 export function ProjetoDetalhes() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   
   const [projeto, setProjeto] = useState<any>(null);
+  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
+  const [mediaNota, setMediaNota] = useState<number>(0);
+  const [totalAvaliacoes, setTotalAvaliacoes] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchProjeto = async () => {
-      try {
-        const response = await api.get(`/projeto/${id}`);
-        if (response.data.status === 'success') {
-          setProjeto(response.data.projeto);
-        }
-      } catch (error) {
-        console.error("Erro ao carregar detalhes", error);
-      } finally {
-        setLoading(false);
+  // Formulário de avaliação
+  const [minhaNota, setMinhaNota] = useState<number>(5);
+  const [meuComentario, setMeuComentario] = useState('');
+  const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
+  const [msgAvaliacao, setMsgAvaliacao] = useState('');
+
+  const fetchDados = async () => {
+    try {
+      const [resProj, resAv] = await Promise.all([
+        api.get(`/projeto/${id}`),
+        api.get(`/projeto/${id}/avaliacoes`).catch(() => ({ data: { media: 0, total: 0, avaliacoes: [] } }))
+      ]);
+
+      if (resProj.data.status === 'success') {
+        setProjeto(resProj.data.projeto);
       }
-    };
-    fetchProjeto();
+      if (resAv.data) {
+        setMediaNota(resAv.data.media || 0);
+        setTotalAvaliacoes(resAv.data.total || 0);
+        setAvaliacoes(resAv.data.avaliacoes || []);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar detalhes", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDados();
   }, [id]);
+
+  const handleEnviarAvaliacao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEnviandoAvaliacao(true);
+    setMsgAvaliacao('');
+    try {
+      const res = await api.post(`/projeto/${id}/avaliar`, {
+        nota: minhaNota,
+        comentario: meuComentario
+      });
+      if (res.data.status === 'success') {
+        setMsgAvaliacao('✅ ' + res.data.message);
+        setMeuComentario('');
+        fetchDados();
+      } else {
+        setMsgAvaliacao('❌ ' + (res.data.message || 'Erro ao enviar avaliação'));
+      }
+    } catch (err: any) {
+      setMsgAvaliacao('❌ ' + (err.response?.data?.message || 'Erro ao enviar avaliação'));
+    } finally {
+      setEnviandoAvaliacao(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -38,17 +87,19 @@ export function ProjetoDetalhes() {
     return <div className="text-center py-20 text-text-secondary">Projeto não encontrado.</div>;
   }
 
-  const imagemUrl = projeto.imagem.startsWith('http') ? projeto.imagem : `/static/img/${projeto.imagem}`;
+  const imagemUrl = projeto.imagem && projeto.imagem.startsWith('http') 
+    ? projeto.imagem 
+    : `/static/${projeto.imagem || 'default_capa_1.jpg'}`;
 
   let coverGradClass = 'bg-[#1a0a2e]';
-  if (projeto.imagem.includes('default_capa_1')) coverGradClass = 'bg-gradient-to-br from-indigo-500/18 to-purple-600/18 bg-bg-surface';
-  else if (projeto.imagem.includes('default_capa_2')) coverGradClass = 'bg-gradient-to-br from-teal-500/18 to-blue-600/18 bg-bg-surface';
-  else if (projeto.imagem.includes('default_capa_3')) coverGradClass = 'bg-gradient-to-br from-purple-500/18 to-pink-500/18 bg-bg-surface';
+  if (projeto.imagem?.includes('default_capa_1')) coverGradClass = 'bg-gradient-to-br from-indigo-500/18 to-purple-600/18 bg-bg-surface';
+  else if (projeto.imagem?.includes('default_capa_2')) coverGradClass = 'bg-gradient-to-br from-teal-500/18 to-blue-600/18 bg-bg-surface';
+  else if (projeto.imagem?.includes('default_capa_3')) coverGradClass = 'bg-gradient-to-br from-purple-500/18 to-pink-500/18 bg-bg-surface';
 
   let statusClass = 'text-[#6c757d]';
-  if (projeto.status.includes('EXECUTADO')) statusClass = 'text-[#28a745]';
-  else if (projeto.status.includes('EXECUÇÃO')) statusClass = 'text-[#ff9800]';
-  else if (projeto.status.includes('INDISPONÍVEL')) statusClass = 'text-[#dc3545]';
+  if (projeto.status?.includes('EXECUTADO')) statusClass = 'text-[#28a745]';
+  else if (projeto.status?.includes('EXECUÇÃO')) statusClass = 'text-[#ff9800]';
+  else if (projeto.status?.includes('INDISPONÍVEL')) statusClass = 'text-[#dc3545]';
 
   return (
     <div>
@@ -57,18 +108,18 @@ export function ProjetoDetalhes() {
         <img 
           src={imagemUrl} 
           alt={projeto.titulo} 
-          className={`w-full h-full object-cover transition-opacity ${projeto.imagem.includes('default_capa') ? 'mix-blend-multiply opacity-100' : 'opacity-45'}`} 
+          className={`w-full h-full object-cover transition-opacity ${projeto.imagem?.includes('default_capa') ? 'mix-blend-multiply opacity-100' : 'opacity-45'}`} 
           onError={(e) => { e.currentTarget.src = '/static/default_capa_1.jpg'; }}
         />
         <div className="absolute inset-0 flex flex-col justify-end pb-8 bg-gradient-to-t from-[rgba(10,4,20,0.85)] to-[transparent_60%]">
           <div className="w-[90%] max-w-[1200px] mx-auto">
-            <span className={`inline-block px-2 py-1 rounded-full text-[0.85rem] mb-3 font-bold bg-bg-primary uppercase ${statusClass}`}>
+            <span className={`inline-block px-2.5 py-1 rounded-full text-[0.85rem] mb-3 font-bold bg-bg-primary uppercase ${statusClass}`}>
               {projeto.status}
             </span>
             <h1 className="font-title text-[clamp(1.4rem,4vw,2.2rem)] font-extrabold text-white m-0 mb-1.5 leading-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]">
               {projeto.titulo}
             </h1>
-            <p className="text-[rgba(255,255,255,0.8)] m-0 text-[0.95rem]">
+            <p className="text-[rgba(255,255,255,0.85)] m-0 text-[0.95rem]">
               👨‍🏫 <strong>{projeto.professor || '—'}</strong>
               &nbsp;·&nbsp;
               🗂 {projeto.categoria || '—'}
@@ -78,43 +129,124 @@ export function ProjetoDetalhes() {
       </div>
 
       <div className="w-[90%] max-w-[1200px] mx-auto pt-10 pb-12">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_300px] gap-8 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-8 items-start">
           
           {/* COLUNA PRINCIPAL */}
           <div>
             {/* Stats Bar */}
             <div className="flex flex-wrap gap-2.5 mb-6">
-              <div className="bg-bg-surface border border-border-color rounded-full px-4 py-1.5 text-[0.85rem] text-text-secondary font-medium">
-                📋 <span id="total-avaliacoes">—</span> avaliações
+              <div className="bg-bg-surface border border-border-color rounded-full px-4 py-1.5 text-[0.85rem] text-text-secondary font-medium shadow-sm">
+                📋 {totalAvaliacoes} {totalAvaliacoes === 1 ? 'avaliação' : 'avaliações'}
               </div>
-              <div className="bg-bg-surface border border-border-color rounded-full px-4 py-1.5 text-[0.85rem] text-text-secondary font-medium">
-                ⭐ Média: <span id="media-nota">—</span>
+              <div className="bg-bg-surface border border-border-color rounded-full px-4 py-1.5 text-[0.85rem] text-text-secondary font-medium shadow-sm">
+                ⭐ Média: <strong>{mediaNota > 0 ? mediaNota.toFixed(1) : '—'}</strong> / 5.0
               </div>
-              <div className="bg-bg-surface border border-border-color rounded-full px-4 py-1.5 text-[0.85rem] text-text-secondary font-medium">
+              <div className="bg-bg-surface border border-border-color rounded-full px-4 py-1.5 text-[0.85rem] text-text-secondary font-medium shadow-sm">
                 👥 {projeto.candidaturas_aprovadas || 0} no time
               </div>
             </div>
 
-            {/* Detalhes do projeto */}
-            <div className="bg-bg-surface rounded-2xl p-7 mb-6 shadow-light">
-              <h2 className="font-title text-[1.1rem] font-bold text-text-primary m-0 mb-5 pb-2.5 border-b-2 border-border-color">📄 Sobre o Projeto</h2>
-              {projeto.detalhes ? (
-                projeto.detalhes.map((paragrafo: string, index: number) => (
-                  <p key={index} className="leading-[1.8] text-text-primary mb-4">{paragrafo}</p>
-                ))
+            {/* Detalhes do projeto (Safe rendering: evita crash com objetos JSON) */}
+            <div className="bg-bg-surface rounded-2xl p-7 mb-6 shadow-light border border-border-color">
+              <h2 className="font-title text-[1.2rem] font-bold text-text-primary m-0 mb-5 pb-2.5 border-b-2 border-border-color flex items-center gap-2">
+                📄 Sobre o Projeto
+              </h2>
+              {Array.isArray(projeto.detalhes) && projeto.detalhes.length > 0 ? (
+                projeto.detalhes.map((item: any, index: number) => {
+                  if (typeof item === 'object' && item !== null) {
+                    return (
+                      <div key={index} className="mb-5 pb-4 border-b border-border-color last:border-b-0 last:pb-0">
+                        <h4 className="font-title text-base font-bold text-purple-primary mb-1.5">
+                          {item.titulo || `Tópico ${index + 1}`}
+                        </h4>
+                        <p className="leading-[1.8] text-text-primary text-[0.95rem] m-0">
+                          {item.conteudo || ''}
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <p key={index} className="leading-[1.8] text-text-primary mb-4 text-[0.95rem]">
+                      {item}
+                    </p>
+                  );
+                })
               ) : (
                 <p className="text-text-secondary">Informações detalhadas não disponíveis.</p>
               )}
             </div>
 
-            {/* Avaliações (Placeholder idêntico ao HTML) */}
-            <div className="bg-bg-surface rounded-2xl p-7 mb-6 shadow-light">
-              <h2 className="font-title text-[1.1rem] font-bold text-text-primary m-0 mb-5 pb-2.5 border-b-2 border-border-color">⭐ Avaliações</h2>
-              <div className="mb-6">
-                <p className="text-text-secondary italic">Carregando avaliações...</p>
+            {/* Avaliações Reais */}
+            <div className="bg-bg-surface rounded-2xl p-7 mb-6 shadow-light border border-border-color">
+              <h2 className="font-title text-[1.2rem] font-bold text-text-primary m-0 mb-5 pb-2.5 border-b-2 border-border-color flex items-center justify-between">
+                <span>⭐ Avaliações da Comunidade</span>
+                <span className="text-sm font-normal text-text-secondary">{avaliacoes.length} no total</span>
+              </h2>
+
+              {/* Lista de Avaliações */}
+              <div className="flex flex-col gap-4 mb-6">
+                {avaliacoes.length === 0 ? (
+                  <p className="text-text-secondary italic m-0">Nenhuma avaliação cadastrada ainda. Seja o primeiro a avaliar!</p>
+                ) : (
+                  avaliacoes.map((av, i) => (
+                    <div key={i} className="p-4 rounded-xl bg-bg-primary border border-border-color flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-[0.9rem] text-text-primary">👤 {av.username}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-yellow-500 font-bold text-sm">{'★'.repeat(av.nota)}{'☆'.repeat(5 - av.nota)}</span>
+                          <span className="text-xs text-text-secondary">{av.data}</span>
+                        </div>
+                      </div>
+                      {av.comentario && (
+                        <p className="text-[0.9rem] text-text-secondary m-0 mt-1 leading-relaxed">"{av.comentario}"</p>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
-              {!user && (
-                <p className="text-text-secondary italic m-0">
+
+              {/* Formulário de Envio de Avaliação */}
+              {user ? (
+                <form onSubmit={handleEnviarAvaliacao} className="pt-4 border-t border-border-color flex flex-col gap-3">
+                  <h4 className="m-0 font-title text-sm font-bold text-purple-primary">Deixe sua avaliação</h4>
+                  {msgAvaliacao && (
+                    <div className="text-sm p-2 rounded bg-purple-primary/10 text-purple-primary font-medium">
+                      {msgAvaliacao}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-semibold text-text-secondary">Sua Nota:</label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setMinhaNota(star)}
+                          className={`text-2xl border-none bg-transparent cursor-pointer p-0 leading-none transition-transform hover:scale-125 ${star <= minhaNota ? 'text-yellow-500' : 'text-gray-300'}`}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-xs font-bold text-text-primary ml-1">{minhaNota} de 5 estrelas</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    placeholder="Escreva um comentário sobre o projeto ou a orientação (opcional)..."
+                    value={meuComentario}
+                    onChange={(e) => setMeuComentario(e.target.value)}
+                    className="p-2.5 rounded-lg border border-border-color bg-bg-primary text-text-primary text-[0.9rem] outline-none focus:border-purple-primary"
+                  />
+                  <button
+                    type="submit"
+                    disabled={enviandoAvaliacao}
+                    className="self-start px-5 py-2 bg-purple-primary text-white rounded-lg text-sm font-bold border-none cursor-pointer hover:bg-purple-hover transition-colors disabled:opacity-70"
+                  >
+                    {enviandoAvaliacao ? 'Enviando...' : 'Publicar Avaliação'}
+                  </button>
+                </form>
+              ) : (
+                <p className="text-text-secondary italic text-sm m-0 pt-3 border-t border-border-color">
                   <Link to="/login" className="text-purple-primary font-semibold no-underline hover:underline">Faça login</Link> para avaliar este projeto.
                 </p>
               )}
@@ -123,15 +255,28 @@ export function ProjetoDetalhes() {
 
           {/* SIDEBAR */}
           <aside className="flex flex-col gap-4">
-            <div className="bg-bg-surface rounded-2xl p-6 shadow-light">
-              <h3 className="font-title text-[1rem] font-bold text-text-primary m-0 mb-4 pb-2 border-b-2 border-border-color">Candidatar-se</h3>
+            <div className="bg-bg-surface rounded-2xl p-6 shadow-light border border-border-color">
+              <h3 className="font-title text-[1rem] font-bold text-text-primary m-0 mb-4 pb-2 border-b-2 border-border-color">
+                Participação
+              </h3>
               {user ? (
-                <Link to={`/projeto/${projeto.id}/candidatar`} className="block w-full text-center py-3 px-4 rounded-full bg-gradient-to-br from-purple-primary to-purple-hover text-white font-bold no-underline text-[0.95rem] shadow-[0_4px_16px_rgba(122,27,181,0.3)] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(122,27,181,0.45)] hover:brightness-110 transition-all">
-                  🚀 Me Candidatar
-                </Link>
+                <div className="flex flex-col gap-2.5">
+                  <Link 
+                    to={`/projeto/${projeto.id}/candidatar`} 
+                    className="block w-full text-center py-3 px-4 rounded-full bg-gradient-to-br from-purple-primary to-purple-hover text-white font-bold no-underline text-[0.95rem] shadow-[0_4px_16px_rgba(122,27,181,0.3)] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(122,27,181,0.45)] hover:brightness-110 transition-all"
+                  >
+                    🚀 Me Candidatar
+                  </Link>
+                  <Link 
+                    to={`/workspace/${projeto.id}`}
+                    className="block w-full text-center py-2.5 px-4 rounded-full bg-transparent border-2 border-purple-primary text-purple-primary font-bold no-underline text-[0.88rem] hover:bg-purple-primary hover:text-white transition-all"
+                  >
+                    💬 Acessar Workspace
+                  </Link>
+                </div>
               ) : (
                 <>
-                  <p className="text-text-secondary text-[0.9rem] m-0 mb-3">Faça login para se candidatar.</p>
+                  <p className="text-text-secondary text-[0.9rem] m-0 mb-3">Faça login para se candidatar às vagas deste projeto.</p>
                   <Link to="/login" className="block w-full text-center py-3 px-4 rounded-full bg-gradient-to-br from-purple-primary to-purple-hover text-white font-bold no-underline text-[0.95rem] shadow-[0_4px_16px_rgba(122,27,181,0.3)] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(122,27,181,0.45)] hover:brightness-110 transition-all">
                     🔑 Fazer Login
                   </Link>
@@ -139,24 +284,46 @@ export function ProjetoDetalhes() {
               )}
             </div>
 
-            <div className="bg-bg-surface rounded-2xl p-6 shadow-light">
-              <h3 className="font-title text-[1rem] font-bold text-text-primary m-0 mb-4 pb-2 border-b-2 border-border-color">Informações</h3>
-              <div className="flex justify-between items-start gap-2 py-2 border-b border-border-color text-[0.88rem] flex-wrap">
+            <div className="bg-bg-surface rounded-2xl p-6 shadow-light border border-border-color">
+              <h3 className="font-title text-[1rem] font-bold text-text-primary m-0 mb-4 pb-2 border-b-2 border-border-color">
+                Informações
+              </h3>
+              <div className="flex justify-between items-start gap-2 py-2.5 border-b border-border-color text-[0.88rem] flex-wrap">
                 <span className="text-text-secondary">📌 Status</span>
-                <strong>{projeto.status || '—'}</strong>
+                <strong className={statusClass}>{projeto.status || '—'}</strong>
               </div>
-              <div className="flex justify-between items-start gap-2 py-2 border-b border-border-color text-[0.88rem] flex-wrap">
+              <div className="flex justify-between items-start gap-2 py-2.5 border-b border-border-color text-[0.88rem] flex-wrap">
                 <span className="text-text-secondary">🗂 Categoria</span>
                 <strong>{projeto.categoria || '—'}</strong>
               </div>
-              <div className="flex justify-between items-start gap-2 py-2 text-[0.88rem] flex-wrap">
+              <div className="flex justify-between items-start gap-2 py-2.5 border-b border-border-color text-[0.88rem] flex-wrap">
                 <span className="text-text-secondary">👨‍🏫 Professor</span>
                 <strong>{projeto.professor || '—'}</strong>
               </div>
+              {projeto.tags && (
+                <div className="py-2.5 text-[0.88rem]">
+                  <span className="text-text-secondary block mb-1.5">🏷️ Tags do Projeto:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {projeto.tags.split(',').map((t: string, idx: number) => {
+                      const trimmed = t.trim();
+                      if (!trimmed) return null;
+                      return (
+                        <Link 
+                          key={idx} 
+                          to={`/projetos?tag=${encodeURIComponent(trimmed.toLowerCase())}`}
+                          className="inline-block px-2 py-0.5 bg-purple-primary/10 text-purple-primary rounded text-xs font-semibold hover:bg-purple-primary hover:text-white transition-colors no-underline"
+                        >
+                          #{trimmed}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <Link to="/projetos" className="block text-center mt-2 text-purple-primary font-semibold text-[0.9rem] no-underline hover:underline">
-              ← Voltar aos Projetos
+              ← Voltar ao Catálogo de Projetos
             </Link>
           </aside>
           

@@ -25,20 +25,51 @@ export function AdminForm() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Fake fetch for visual representation
+    const carregarProjeto = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get(`/projeto/${id}`);
+        const p = res.data.projeto || res.data;
+        if (p && p.titulo) {
+          let detalhesText = '';
+          if (Array.isArray(p.detalhes)) {
+            detalhesText = p.detalhes.map((item: any) => {
+              if (typeof item === 'object' && item !== null) {
+                return (item.titulo ? item.titulo + ': ' : '') + (item.conteudo || '');
+              }
+              return String(item);
+            }).join('\n');
+          } else if (p.detalhes) {
+            detalhesText = String(p.detalhes);
+          }
+
+          setFormData({
+            titulo: p.titulo || '',
+            categoria: p.categoria || '',
+            status: p.status || 'DISPONÍVEL',
+            professor: p.professor || '',
+            descricao_curta: p.descricao_curta || '',
+            detalhes: detalhesText,
+            imagem: p.imagem || ''
+          });
+
+          if (p.links && typeof p.links === 'object') {
+            const arr = Object.entries(p.links).map(([nome, url]) => ({ nome, url: String(url) }));
+            setLinks(arr.length > 0 ? arr : [{ nome: '', url: '' }]);
+          }
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Erro ao carregar projeto.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (id) {
-      setFormData({
-        titulo: 'Projeto Fake',
-        categoria: 'Responsabilidade Social',
-        status: 'EM EXECUÇÃO',
-        professor: 'João',
-        descricao_curta: 'Desc',
-        detalhes: 'Detalhes aqui',
-        imagem: 'default.png'
-      });
-      setLinks([{ nome: 'GitHub', url: 'https://github.com' }]);
+      carregarProjeto();
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, [id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

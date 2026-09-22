@@ -14,11 +14,25 @@ export function CandidaturaEditar() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Fake data fetch
-    setProjeto({ titulo: 'Projeto de Teste' });
-    setMotivo('Estou muito interessado.');
-    setExperiencia('React, Node');
-    setLoading(false);
+    const carregarCandidatura = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get(`/candidatura/${id}`);
+        if (res.data.status === 'success' && res.data.candidatura) {
+          const c = res.data.candidatura;
+          setProjeto(c.projeto || { titulo: 'Projeto' });
+          setMotivo(c.motivo || '');
+          setExperiencia(c.experiencia || '');
+        } else {
+          setError(res.data.message || 'Erro ao carregar candidatura');
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Erro ao buscar dados da candidatura.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (id) carregarCandidatura();
   }, [id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
