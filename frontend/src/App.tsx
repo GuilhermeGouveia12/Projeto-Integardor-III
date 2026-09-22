@@ -24,6 +24,7 @@ import { AdminForm } from './pages/AdminForm';
 import { AdminUserForm } from './pages/AdminUserForm';
 import { AdminLogs } from './pages/AdminLogs';
 import { ErrorPage } from './pages/ErrorPage';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
   return (
@@ -33,30 +34,39 @@ function App() {
           <Header />
           <main className="flex-1">
             <Routes>
+              {/* Rotas Públicas */}
               <Route path="/" element={<Home />} />
               <Route path="/sobre" element={<Sobre />} />
               <Route path="/projetos" element={<Projetos />} />
+              <Route path="/projeto/:id" element={<ProjetoDetalhes />} />
               <Route path="/login" element={<Login />} />
               <Route path="/cadastro" element={<Register />} />
-              <Route path="/perfil" element={<Perfil />} />
-              <Route path="/perfil/editar" element={<PerfilEditar />} />
               <Route path="/recuperar-senha" element={<RecuperarSenha />} />
               <Route path="/redefinir-senha/:token" element={<RedefinirSenha />} />
               <Route path="/verificar-conta/:token" element={<VerificarConta />} />
-              <Route path="/submissao" element={<Submissao />} />
-              <Route path="/submissao/:id/editar" element={<SubmissaoEditar />} />
-              <Route path="/candidatura/:id/editar" element={<CandidaturaEditar />} />
-              <Route path="/projeto/:id" element={<ProjetoDetalhes />} />
-              <Route path="/projeto/:id/editar" element={<AdminForm />} />
-              <Route path="/projeto/:id/candidatar" element={<Candidatura />} />
-              <Route path="/workspace/:id" element={<Workspace />} />
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/projeto/novo" element={<AdminForm />} />
-              <Route path="/admin/projeto/:id/editar" element={<AdminForm />} />
-              <Route path="/admin/usuario/novo" element={<AdminUserForm />} />
-              <Route path="/admin/usuario/:id/editar" element={<AdminUserForm />} />
-              <Route path="/admin/logs" element={<AdminLogs />} />
-              <Route path="/coordenador" element={<CoordenadorDashboard />} />
+
+              {/* Rotas Autenticadas (Usuários Logados) */}
+              <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
+              <Route path="/perfil/editar" element={<ProtectedRoute><PerfilEditar /></ProtectedRoute>} />
+              <Route path="/submissao" element={<ProtectedRoute><Submissao /></ProtectedRoute>} />
+              <Route path="/submissao/:id/editar" element={<ProtectedRoute><SubmissaoEditar /></ProtectedRoute>} />
+              <Route path="/candidatura/:id/editar" element={<ProtectedRoute><CandidaturaEditar /></ProtectedRoute>} />
+              <Route path="/projeto/:id/candidatar" element={<ProtectedRoute><Candidatura /></ProtectedRoute>} />
+              <Route path="/workspace/:id" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
+
+              {/* Rotas Restritas: Coordenação (Coordenador e Admin) */}
+              <Route path="/coordenador" element={<ProtectedRoute allowedRoles={['admin', 'coordenador']}><CoordenadorDashboard /></ProtectedRoute>} />
+
+              {/* Rotas Restritas: Administração (Somente Admin) */}
+              <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+              <Route path="/admin/logs" element={<ProtectedRoute allowedRoles={['admin']}><AdminLogs /></ProtectedRoute>} />
+              <Route path="/admin/projeto/novo" element={<ProtectedRoute allowedRoles={['admin']}><AdminForm /></ProtectedRoute>} />
+              <Route path="/admin/projeto/:id/editar" element={<ProtectedRoute allowedRoles={['admin']}><AdminForm /></ProtectedRoute>} />
+              <Route path="/projeto/:id/editar" element={<ProtectedRoute allowedRoles={['admin']}><AdminForm /></ProtectedRoute>} />
+              <Route path="/admin/usuario/novo" element={<ProtectedRoute allowedRoles={['admin']}><AdminUserForm /></ProtectedRoute>} />
+              <Route path="/admin/usuario/:id/editar" element={<ProtectedRoute allowedRoles={['admin']}><AdminUserForm /></ProtectedRoute>} />
+
+              {/* Telas de Erro HTTP */}
               <Route path="/401" element={<ErrorPage code={401} />} />
               <Route path="/403" element={<ErrorPage code={403} />} />
               <Route path="/404" element={<ErrorPage code={404} />} />
