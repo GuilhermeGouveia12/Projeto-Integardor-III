@@ -17,9 +17,17 @@ def serve_react_assets(path):
 # =========================
 # Rotas de Health e Informações
 # =========================
+@app.route('/favicon.ico')
+def favicon():
+    icon_path = os.path.join(base_dir, 'static', 'logoCEUB.png')
+    if os.path.exists(icon_path):
+        return send_from_directory(os.path.join(base_dir, 'static'), 'logoCEUB.png', mimetype='image/png')
+    return ('', 204)
+
 @app.route('/api/health')
 def health():
     return jsonify({"status": "online", "message": "SisCPTI API operational"})
+
 
 # =========================
 # Rota Principal e SPA Fallback (React)
