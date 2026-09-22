@@ -2,21 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    },
-    {
       "src": "SISCPTI/app.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "SISCPTI/app.py" },
-    { "src": "/assets/(.*)", "dest": "frontend/assets/$1" },
-    { "src": "/static/(.*)", "dest": "frontend/static/$1" },
-    { "src": "/(.*)", "dest": "frontend/index.html" }
+    {
+      "src": "/(.*)",
+      "dest": "SISCPTI/app.py"
+    }
   ]
 }
