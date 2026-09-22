@@ -1,0 +1,524 @@
+====================================================================================================
+               SISCPTI - RELATÓRIO COMPLETO DE AUDITORIA, MELHORIAS E CORREÇÕES
+====================================================================================================
+Data da Auditoria: 22/09/2026
+Escopo: Verificação código a código, página a página do Frontend React e Backend Flask (SISCPTI)
+Objetivo: Diagnosticar todos os problemas, componentes quebrados, rotas conflitantes e dados simulados,
+          fornecendo o guia definitivo para estabilização completa do sistema.
+====================================================================================================
+
+ÍNDICE
+1. DIAGNÓSTICO GERAL E PRINCIPAIS MOTIVOS DOS ERROS
+2. AUDITORIA PÁGINA POR PÁGINA (FRONTEND REACT)
+3. AUDITORIA DO BACKEND FLASK (ROTAS, CONTROLLERS E MODELOS)
+4. AUDITORIA DE BANCO DE DADOS & INTEGRAÇÃO SUPABASE
+5. AUDITORIA DE COMPONENTES GLOBAIS E ROTEAMENTO (App.tsx)
+6. TABELA DE ROTAS: MAPEAMENTO FRONTEND -> BACKEND
+7. PLANO DE AÇÃO DETALHADO (PASSO A PASSO PARA CONSERTO)
+
+====================================================================================================
+1. DIAGNÓSTICO GERAL E PRINCIPAIS MOTIVOS DOS ERROS
+====================================================================================================
+
+Durante a auditoria completa, foram identificados 5 grandes padrões que causam falhas no sistema:
+
+A. CRASH FATAL DE REACT (TELA BRANCA):
+   - Na página de detalhes do projeto (ProjetoDetalhes.tsx), o banco de dados armazena `detalhes`
+     como uma lista de objetos JSON: [{"titulo": "...", "conteudo": "..."}].
+   - O componente tenta renderizar `{paragrafo}` diretamente como texto:
+     `{projeto.detalhes.map((paragrafo) => <p>{paragrafo}</p>)}`
+   - O React rejeita renderizar um objeto diretamente como filho, disparando o erro fatal:
+     "Objects are not valid as a React child", fazendo a página crashar completamente em branco.
+
+B. FALTA DE ATRIBUTOS NO SERIALIZADOR (to_dict) DO MODELO Project:
+   - No arquivo `models.py`, o método `Project.to_dict()` não inclui o campo `tags`, nem os dados do
+     `orientador`, nem `professor_id`.
+   - Consequência: Em `Projetos.tsx`, a propriedade `p.tags` chega como `undefined`. A barra lateral
+     de filtros fica 100% vazia ("Nenhuma tag cadastrada") e a busca por tags não funciona.
+
+C. DISCREPÂNCIA ENTRE URLs DO FRONTEND E ROTAS DO FLASK (ERROS 404 E 405):
+   - O frontend utiliza o Axios configurado com `baseURL: '/api'`.
+   - Muitas rotas no Flask foram criadas sem o prefixo `/api` (ex: `/submissao`, `/admin/logs`,
+     `/projeto/<id>/workspace`). Quando o frontend faz a requisição, ele busca `/api/admin/logs`
+     ou `/api/submissao`, resultando imediatamente em erro 404 (Endpoint não encontrado).
+   - O endpoint `/api/perfil/editar` no Flask foi registrado apenas como `methods=['PUT']`, mas o
+     formulário React envia uma requisição `POST`, resultando em erro 405 Method Not Allowed.
+
+D. ROTAS FLASK INTERCEPTANDO O ROTEAMENTO DO REACT (SHADOWING):
+   - O Flask possui rotas como `@app.route('/coordenador')` e `@app.route('/submissao')`.
+   - Se o usuário digita na barra de endereço `http://site/coordenador`, o Flask intercepta a rota
+     antes do fallback do React SPA e retorna JSON puro ou redirect 302, impedindo o usuário de ver
+     a interface da tela do React. Todas as rotas de dados devem ser `/api/...`.
+
+E. TELAS COM DADOS "MOCK"/FAKES E BOTÕES MORTOS:
+   - Páginas cruciais como `Workspace.tsx`, `AdminDashboard.tsx`, `CoordenadorDashboard.tsx`,
+     `AdminLogs.tsx`, `CandidaturaEditar.tsx` e `SubmissaoEditar.tsx` possuem dados estáticos
+     injetados com `useEffect` fake, e grande parte dos botões de ação ("Salvar", "Aprovar",
+     "Rejeitar", "Excluir", "Exportar CSV") não têm evento `onClick` configurado.
+
+====================================================================================================
+2. AUDITORIA PÁGINA POR PÁGINA (FRONTEND REACT)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 1] Home.tsx (Rota: /)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO PARCIALMENTE.
+- Problemas Encontrados:
+  * O conteúdo é estático e exibe o texto explicativo do CEUB perfeitamente.
+  * O botão "Ver Projetos" navega para `/projetos` com sucesso.
+- O que arrumar:
+  * Adicionar cards dinâmicos dos últimos projetos cadastrados ou números de impacto na home para
+    torná-la mais atrativa e dinâmica.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 2] Sobre.tsx (Rota: /sobre)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO BEM.
+- Problemas Encontrados:
+  * Os números estatísticos (11+ Usuários, 4+ Projetos, 3+ Professores) estão fixos no código HTML.
+- O que arrumar:
+  * Conectar os números estatísticos ao endpoint `/api/admin/stats` para exibir valores reais do banco.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 3] Projetos.tsx (Rota: /projetos)
+----------------------------------------------------------------------------------------------------
+- Status: COM PROBLEMA CRÍTICO DE TAGS.
+- Problemas Encontrados:
+  * A lista de projetos é carregada de `/api/projetos`, mas a barra lateral de filtros ("Filtro por Tags")
+    fica sempre vazia exibindo "Nenhuma tag cadastrada".
+  * Causa: O backend `Project.to_dict()` em `models.py` não inclui o campo `tags` no retorno JSON.
+  * A paginação visual (1, 2, 3...) não está implementada no frontend, embora o backend já suporte
+    os parâmetros `page` e `per_page`.
+- O que arrumar:
+  * Adicionar `"tags": self.tags or ""` no `models.py:Project.to_dict()`.
+  * Implementar botões de paginação na interface.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 4] ProjetoDetalhes.tsx (Rota: /projeto/:id)
+----------------------------------------------------------------------------------------------------
+- Status: CRASH CRÍTICO (TELA BRANCA).
+- Problemas Encontrados:
+  * Linha 102: `projeto.detalhes.map((paragrafo: string, index: number) => <p>{paragrafo}</p>)`
+  * No banco de dados Supabase e no seed, os detalhes são salvos como objetos:
+    `[{"titulo": "Contextualização", "conteudo": "..."}, ...]`
+  * Tentar renderizar o objeto `{paragrafo}` quebra o React com o erro:
+    "Uncaught Error: Objects are not valid as a React child".
+  * Bloco de Avaliações: Exibe texto estático "Carregando avaliações..." e nunca busca
+    as avaliações reais de `/api/projeto/:id/avaliacoes`.
+  * O formulário de envio de avaliação (estrelas de 1 a 5 e comentários) não existe na página.
+- O que arrumar:
+  * Ajustar a renderização de `projeto.detalhes` para verificar se o item é objeto ou string:
+    `typeof paragrafo === 'object' ? <div><h4>{paragrafo.titulo}</h4><p>{paragrafo.conteudo}</p></div> : <p>{paragrafo}</p>`
+  * Fazer requisição real para `/api/projeto/:id/avaliacoes` e renderizar as avaliações reais.
+  * Adicionar modal ou seção com formulário de avaliação com estrelas.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 5] Candidatura.tsx (Rota: /projeto/:id/candidatar)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO, COM AJUSTES DE UX NECESSÁRIOS.
+- Problemas Encontrados:
+  * O envio funciona via `api.post('/projeto/:id/candidatar')`.
+  * Falta validação se o usuário já possui candidatura enviada para esse projeto. Se o usuário já se
+    candidatou, deveria ser avisado antes de submeter duplicado.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 6] Perfil.tsx (Rota: /perfil)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO PARCIALMENTE COM BOTÕES MORTOS.
+- Problemas Encontrados:
+  * Aba "Minhas Inscrições": O botão "Cancelar" candidatura (linha 172) não possui `onClick`.
+  * Aba "Minhas Propostas": O botão "Excluir" proposta (linha 218) não possui `onClick`.
+  * Aba "Gerenciar Meus Projetos": O link "Editar Informações" aponta para `/projeto/:id/editar`,
+    mas essa rota não existe no `App.tsx` (cai em 404).
+  * Aba "Gerenciar Meus Projetos": Os botões "Aceitar", "Recusar" e "Reavaliar" candidatos
+    (linhas 278, 279 e 282) não possuem evento `onClick`.
+- O que arrumar:
+  * Criar funções para chamar os endpoints de cancelamento, exclusão e avaliação de candidatos via API.
+  * Adicionar a rota de edição de projetos ou redirecionar para `/admin/projeto/:id/editar` se for admin.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 7] PerfilEditar.tsx (Rota: /perfil/editar)
+----------------------------------------------------------------------------------------------------
+- Status: QUEBRADO COM ERRO 405.
+- Problemas Encontrados:
+  * Linha 46: envia requisição `POST /api/perfil/editar`.
+  * No backend (`routes_auth.py`), a rota está registrada apenas como `methods=['PUT']`.
+  * O servidor rejeita a chamada com `405 Method Not Allowed`.
+- O que arrumar:
+  * Alterar o backend para aceitar ambos os métodos: `methods=['POST', 'PUT']`.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 8] Login.tsx (Rota: /login)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO.
+- Problemas Encontrados:
+  * O login via `/api/login` funciona corretamente e salva a sessão e cookies.
+  * Se a conta estiver desativada (pendente de confirmação de e-mail), retorna aviso legível.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 9] Register.tsx (Rota: /cadastro)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO.
+- Problemas Encontrados:
+  * Criação de conta via `/api/cadastro` opera normalmente.
+  * O e-mail de confirmação enviado contém o link `/verificar-conta/:token`, mas o React não tem
+    essa rota registrada no `App.tsx`.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 10] RecuperarSenha.tsx (Rota: /recuperar-senha)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO.
+- Problemas Encontrados:
+  * Dispara e-mail com token via `/api/recuperar-senha`.
+  * Requer que as credenciais SMTP no `.env` estejam devidamente configuradas para envio do e-mail.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 11] RedefinirSenha.tsx (Rota: /redefinir-senha/:token)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO.
+- Problemas Encontrados:
+  * Consome `/api/redefinir-senha/:token` e atualiza a senha no banco com hash seguro.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 12] Submissao.tsx (Rota: /submissao)
+----------------------------------------------------------------------------------------------------
+- Status: QUEBRADO COM ERRO 404 / 302.
+- Problemas Encontrados:
+  * O frontend faz `api.post('/submissao', data)` -> atinge `/api/submissao`.
+  * No backend (`routes_project.py`), a rota foi declarada como `@app.route('/submissao')` (sem `/api`),
+    e em vez de retornar JSON, ela executa `return redirect(url_for("submissao"))`.
+  * Ao tentar submeter, o usuário recebe erro de resposta inválida ou 404.
+- O que arrumar:
+  * Renomear a rota no backend para `@app.route('/api/submissao', methods=['POST'])` e retornar JSON:
+    `{"status": "success", "message": "Proposta submetida com sucesso!"}`.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 13] SubmissaoEditar.tsx (Rota: /submissao/:id/editar)
+----------------------------------------------------------------------------------------------------
+- Status: TOTALMENTE SIMULADO / QUEBRADO.
+- Problemas Encontrados:
+  * Linhas 23-32: `useEffect` preenchido com dados estáticos fakes ("Projeto Original", "Empresa Teste").
+    Não faz requisição `GET` ao backend para buscar os dados reais da proposta.
+  * O envio faz `POST /api/submissao/:id/editar`, mas o backend possui apenas a rota HTML
+    `/submissao/editar/<id>` que retorna redirecionamentos.
+- O que arrumar:
+  * Criar rota `GET /api/submissao/<id>` no backend para carregar os dados reais.
+  * Criar rota `POST /api/submissao/<id>/editar` no backend que aceite multipart/form-data e responda JSON.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 14] CandidaturaEditar.tsx (Rota: /candidatura/:id/editar)
+----------------------------------------------------------------------------------------------------
+- Status: TOTALMENTE SIMULADO / QUEBRADO.
+- Problemas Encontrados:
+  * Linhas 17-22: `useEffect` carrega dados fakes ("Projeto de Teste", "Estou muito interessado").
+  * O envio faz `POST /api/candidatura/:id/editar`, inexistente no backend (só existia rota HTML antiga
+    `/perfil/candidatura/<id>/editar` que retornava redirect).
+- O que arrumar:
+  * Criar rota `GET /api/candidatura/<id>` para buscar motivo e experiência reais.
+  * Criar rota `POST /api/candidatura/<id>/editar` que salve os dados e retorne JSON.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 15] Workspace.tsx (Rota: /workspace/:id)
+----------------------------------------------------------------------------------------------------
+- Status: CRÍTICO - TOTALMENTE MOCKADO / SEM INTERATIVIDADE.
+- Problemas Encontrados:
+  * Linhas 17-21: `useEffect` injeta projeto fake, membros fakes e mensagem fake.
+  * O chat em tempo real não envia mensagens: o campo `<input>` (linha 123) e o botão de envio ✈️
+    (linha 124) não possuem `value`, nem `onChange`, nem `onClick`.
+  * As abas 'Kanban', 'Métricas', 'Participantes', 'Videochamada' apenas exibem o texto genérico:
+    "Seção de X renderizada aqui (simulação do frontend)".
+  * O backend já possui suporte completo para Kanban (`/api/projeto/:id/tasks`), métricas
+    (`/api/projeto/:id/metrics`) e mensagens, mas o frontend não se conecta a eles.
+- O que arrumar:
+  * Conectar o carregamento da workspace ao endpoint `/api/projeto/:id/workspace`.
+  * Implementar envio e polling de mensagens do chat (`/api/projeto/:id/workspace/enviar_ajax`).
+  * Integrar o quadro Kanban com as tarefas reais (`GET /api/projeto/:id/tasks`, `POST .../mover`).
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 16] AdminDashboard.tsx (Rota: /admin)
+----------------------------------------------------------------------------------------------------
+- Status: CRÍTICO - DADOS MOCKADOS E BOTÕES INERTES.
+- Problemas Encontrados:
+  * Linhas 15-21: `useEffect` preenche projetos, submissões, candidaturas e usuários com arrays fakes.
+  * Botões de exportação do cabeçalho (PDF, CSV de Projetos, CSV de Satisfação, CSV de Logs) não
+    possuem `onClick` nem links para as rotas de download.
+  * Botão "+ Novo Projeto": sem `onClick` (deve redirecionar para `/admin/projeto/novo`).
+  * Botões "Editar" e "Excluir" em cada tabela: sem `onClick`.
+  * Botões "Aprovar" e "Rejeitar" submissões: sem `onClick`.
+  * Botão "+ Novo Usuário": sem `onClick` (deve redirecionar para `/admin/usuario/novo`).
+  * Gráficos Chart.js: são placeholders cinzas sem bibliotecas de gráficos.
+- O que arrumar:
+  * Chamar `api.get('/admin/dashboard')` no `useEffect` para preencher as 4 tabelas com dados reais.
+  * Conectar todos os botões às rotas correspondentes do backend.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 17] AdminForm.tsx (Rota: /admin/projeto/novo e /admin/projeto/:id/editar)
+----------------------------------------------------------------------------------------------------
+- Status: QUEBRADO COM ERRO 404 NO ENVIO.
+- Problemas Encontrados:
+  * Linhas 28-42: ao editar, usa dados fictícios ("Projeto Fake") em vez de buscar `/api/projeto/:id`.
+  * Linha 81: envia para `/admin/projeto/novo` ou `/admin/projeto/:id/editar`.
+    Com o Axios `baseURL: '/api'`, isso bate em `/api/admin/projeto/novo` e `/api/admin/projeto/:id/editar`.
+  * O backend não possui essas rotas (possuía apenas as antigas rotas HTML `/admin/novo` e
+    `/projeto/:id/editar` com redirects).
+- O que arrumar:
+  * Implementar requisição `GET /api/projeto/:id` para carregar dados reais na edição.
+  * Criar no backend as rotas `POST /api/admin/projeto/novo` e `POST /api/admin/projeto/<id>/editar`
+    com retorno em JSON.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 18] AdminUserForm.tsx (Rota: /admin/usuario/novo e /admin/usuario/:id/editar)
+----------------------------------------------------------------------------------------------------
+- Status: QUEBRADO COM ERRO 404 NO ENVIO.
+- Problemas Encontrados:
+  * Linha 41: envia para `/admin/usuario/:id/editar` ou `/admin/usuario/novo`.
+  * No backend (`routes_admin.py`), as rotas são:
+    - Criar: `POST /api/admin/usuario` (sem o `/novo`)
+    - Editar: `PUT /api/admin/usuario/<user_id>` (método PUT, sem `/editar`)
+  * Essa divergência de caminhos e métodos gera erro 404 imediato.
+- O que arrumar:
+  * Fazer o frontend chamar as rotas corretas ou adicionar aliases no backend para tolerar ambos
+    os padrões.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 19] AdminLogs.tsx (Rota: /admin/logs)
+----------------------------------------------------------------------------------------------------
+- Status: TOTALMENTE SIMULADO.
+- Problemas Encontrados:
+  * Linhas 10-16: logs fictícios fixos no código.
+  * Linha 22: a chamada `api.get('/admin/logs')` está comentada.
+  * No backend, a rota foi declarada como `@app.route('/admin/logs')` em vez de `@app.route('/api/admin/logs')`.
+- O que arrumar:
+  * Alterar a rota no backend para `@app.route('/api/admin/logs')`.
+  * Descomentar e conectar o `useEffect` e o filtro na tela do frontend.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 20] CoordenadorDashboard.tsx (Rota: /coordenador)
+----------------------------------------------------------------------------------------------------
+- Status: CRÍTICO - CONFLITO DE ROTAS E BOTÕES INERTES.
+- Problemas Encontrados:
+  * CONFLITO SEVERO: O backend possui `@app.route('/coordenador')`. Se o usuário digita
+    `/coordenador` no navegador, o Flask responde com JSON bruto em vez de servir a interface React!
+  * O `useEffect` do frontend possui dados mockados.
+  * Os botões "Salvar" orientador, "Aprovar" e "Rejeitar" propostas não têm manipuladores de clique.
+- O que arrumar:
+  * Renomear a rota no backend para `@app.route('/api/coordenador')`.
+  * Conectar a tela a `/api/coordenador` e adicionar manipuladores para salvar orientador e aprovar propostas.
+
+----------------------------------------------------------------------------------------------------
+[PÁGINA 21] ErrorPage.tsx (Rota: 404 / *)
+----------------------------------------------------------------------------------------------------
+- Status: FUNCIONANDO BEM.
+- Renderiza corretamente a página 404 customizada com botões para voltar à Home e Catálogo de Projetos.
+
+====================================================================================================
+3. AUDITORIA DO BACKEND FLASK (ROTAS, CONTROLLERS E MODELOS)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+A. MODELOS (models.py)
+----------------------------------------------------------------------------------------------------
+1. `Project.to_dict()`:
+   * FALTA: `"tags": self.tags or ""`
+   * FALTA: `"professor_id": self.professor_id`
+   * FALTA: `"orientador": {"id": self.orientador.id, "username": self.orientador.username} if self.orientador else None`
+   * FALTA: `"candidaturas_aprovadas": len([c for c in self.candidaturas if c.status == 'APROVADA']) if self.candidaturas else 0`
+   * Sem esses campos, várias páginas quebram silenciosamente ou mostram campos em branco.
+
+----------------------------------------------------------------------------------------------------
+B. ROTAS DE AUTENTICAÇÃO (routes_auth.py)
+----------------------------------------------------------------------------------------------------
+1. `/api/perfil/editar`:
+   * Aceita apenas `PUT`. Deve aceitar `['POST', 'PUT']` para compatibilidade total.
+2. Link de Ativação de Conta:
+   * Gera `request.host_url + "/verificar-conta/" + token`.
+   * A rota da API é `/api/verificar-conta/<token>`. O frontend precisa de uma página correspondente.
+
+----------------------------------------------------------------------------------------------------
+C. ROTAS DE PROJETOS E CANDIDATURAS (routes_project.py)
+----------------------------------------------------------------------------------------------------
+1. `@app.route('/submissao')`:
+   * Não possui `/api/` e faz redirect HTML. Deve ser `@app.route('/api/submissao', methods=['POST'])`
+     e retornar JSON com status 201/200.
+2. `@app.route('/submissao/editar/<id>')` e `@app.route('/submissao/excluir/<id>')`:
+   * Não possuem `/api/` e retornam redirects HTML.
+3. `@app.route('/projeto/<id>/workspace')`:
+   * Não possui `/api/` (deve ser `/api/projeto/<id>/workspace`).
+4. `@app.route('/projeto/<id>/workspace/enviar_ajax')`:
+   * Não possui `/api/` (deve ser `/api/projeto/<id>/workspace/enviar_ajax`).
+5. `@app.route('/perfil/candidatura/<id>/<acao>')`:
+   * Apenas retorna JSON se `request.args.get('ajax') == '1'`. Deve sempre retornar JSON por padrão.
+6. `@app.route('/perfil/candidatura/<id>/cancelar')`:
+   * Não possui `/api/` e retorna redirect HTML. Deve retornar JSON.
+7. `@app.route('/projeto/<id>/avaliar')`:
+   * Retorna redirect para uma rota de template antiga inexistente (`url_for('projeto_detalhes')`).
+     Deve responder com JSON.
+
+----------------------------------------------------------------------------------------------------
+D. ROTAS ADMINISTRATIVAS E COORDENAÇÃO (routes_admin.py)
+----------------------------------------------------------------------------------------------------
+1. `@app.route('/coordenador')`:
+   * CONFLITO: Intercepta a rota do React SPA. Deve ser renomeado para `@app.route('/api/coordenador')`.
+2. `@app.route('/admin/logs')`:
+   * Deve ser `@app.route('/api/admin/logs')`.
+3. `@app.route('/admin/novo')`:
+   * Deve aceitar `/api/admin/projeto/novo` com método `POST` retornando JSON.
+4. `@app.route('/projeto/<id>/editar')`:
+   * Deve aceitar `/api/admin/projeto/<id>/editar` e `/api/projeto/<id>/editar` com método `POST`
+     retornando JSON.
+5. Rotas de Exportação CSV:
+   * Adicionar suporte com prefixo `/api/admin/exportar/<tipo>` para download direto.
+
+====================================================================================================
+4. AUDITORIA DE BANCO DE DADOS & INTEGRAÇÃO SUPABASE
+====================================================================================================
+
+- Status do Banco:
+  * O esquema SQL completo foi corrigido e executado no Supabase com sucesso.
+  * A tabela `user` está com escape de aspas `"user"` para não conflitar com a palavra reservada.
+  * Todas as 10 tabelas têm Row Level Security (RLS) habilitado com políticas permissivas para a service key.
+  * As sequências (`setval`) foram sincronizadas.
+- O que manter monitorado:
+  * No `models.py`, garantir que os relacionamentos SQLAlchemy utilizem chaves estrangeiras que coincidam
+    com as colunas do PostgreSQL (ex: `professor_id` referenciando `user.id`).
+
+====================================================================================================
+5. AUDITORIA DE COMPONENTES GLOBAIS E ROTEAMENTO (App.tsx)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+A. HEADER (Header.tsx)
+----------------------------------------------------------------------------------------------------
+1. Botão de Notificações (🔔):
+   * Não abre popup nem exibe quantidade de notificações não lidas.
+   * O backend já possui `/api/notificacoes` e `/api/notificacoes/ler/<id>` prontos para uso.
+2. Botão de Alternar Tema (🌓):
+   * Não possui função `onClick`. Deve alternar a classe `dark-theme` no `document.body` e salvar
+     a preferência no `localStorage`.
+3. Menu de Coordenador:
+   * O menu dropdown do usuário só mostra o link "⚙️ Painel Admin" para administradores.
+   * Usuários com `role === 'coordenador'` ficam sem link direto para o `/coordenador`.
+
+----------------------------------------------------------------------------------------------------
+B. ROTEAMENTO (App.tsx)
+----------------------------------------------------------------------------------------------------
+1. Rota de Verificação de Conta:
+   * Falta a rota `<Route path="/verificar-conta/:token" element={<VerificarConta />} />`.
+   * Quando o usuário clica no link de confirmação do e-mail, atualmente cai na tela 404.
+2. Rota de Edição de Projeto para Aluno/Dono:
+   * Na tela de perfil, o link "Editar Informações" direciona para `/projeto/:id/editar`.
+   * Essa rota não existe no `App.tsx`, apenas `/admin/projeto/:id/editar`.
+   * Deve-se apontar `/projeto/:id/editar` para o formulário `AdminForm` (que também serve para donos).
+
+====================================================================================================
+6. TABELA DE ROTAS: MAPEAMENTO FRONTEND -> BACKEND
+====================================================================================================
+
++-------------------------------------+-------------------------------------+-----------+-------------------------+
+| Ação Frontend (Axios /api)          | Rota no Flask Backend               | Método    | Status Atual            |
++-------------------------------------+-------------------------------------+-----------+-------------------------+
+| api.post('/login')                  | /api/login                          | POST      | OK                      |
+| api.post('/cadastro')               | /api/cadastro                       | POST      | OK                      |
+| api.get('/me')                      | /api/me                             | GET       | OK                      |
+| api.post('/logout')                 | /api/logout                         | POST      | OK                      |
+| api.get('/projetos')                | /api/projetos                       | GET       | OK (falta 'tags' dict)  |
+| api.get('/projeto/:id')             | /api/projeto/<id>                   | GET       | OK                      |
+| api.post('/projeto/:id/candidatar') | /api/projeto/<id>/candidatar        | POST      | OK                      |
+| api.get('/perfil')                  | /api/perfil                         | GET       | OK                      |
+| api.post('/perfil/editar')          | /api/perfil/editar                  | POST/PUT  | ERRO 405 (era só PUT)   |
+| api.post('/submissao')              | /submissao (HTML)                   | POST      | ERRO 404 (falta /api)   |
+| api.post('/submissao/:id/editar')   | /submissao/editar/<id> (HTML)       | POST      | ERRO 404 (falta /api)   |
+| api.post('/candidatura/:id/editar') | /perfil/candidatura/<id>/editar     | POST      | ERRO 404 (falta /api)   |
+| api.get('/workspace/:id')           | /projeto/<id>/workspace             | GET       | ERRO 404 (falta /api)   |
+| api.post('/workspace/:id/enviar')   | /projeto/<id>/workspace/enviar_ajax | POST      | ERRO 404 (falta /api)   |
+| api.get('/admin/dashboard')         | /api/admin/dashboard                | GET       | OK (frontend mockado)   |
+| api.get('/admin/logs')              | /admin/logs                         | GET       | ERRO 404 (falta /api)   |
+| api.post('/admin/projeto/novo')     | /admin/novo (HTML)                  | POST      | ERRO 404 (falta /api)   |
+| api.post('/admin/projeto/:id/editar')|/projeto/<id>/editar (HTML)         | POST      | ERRO 404 (falta /api)   |
+| api.post('/admin/usuario/novo')     | /api/admin/usuario                  | POST      | ERRO 404 (rota diverge) |
+| api.post('/admin/usuario/:id/editar')|/api/admin/usuario/<id>             | PUT       | ERRO 404 (rota diverge) |
+| api.get('/coordenador')             | /coordenador                        | GET       | CONFLITO COM O REACT    |
++-------------------------------------+-------------------------------------+-----------+-------------------------+
+
+====================================================================================================
+7. PLANO DE AÇÃO DETALHADO (PASSO A PASSO PARA CONSERTO)
+====================================================================================================
+
+ETAPA 1: CORREÇÕES URGENTES NO BACKEND (SISCPTI)
+----------------------------------------------------------------------------------------------------
+1.1. Em `models.py`:
+     - Atualizar `Project.to_dict()` para incluir:
+       * `"tags": self.tags or ""`
+       * `"professor_id": self.professor_id`
+       * `"orientador": {"id": self.orientador.id, "username": self.orientador.username} if self.orientador else None`
+       * `"candidaturas_aprovadas": len([c for c in self.candidaturas if c.status == 'APROVADA']) if self.candidaturas else 0`
+
+1.2. Em `routes_auth.py`:
+     - Alterar `@app.route('/api/perfil/editar', methods=['POST', 'PUT'])` para permitir ambas as requisições.
+
+1.3. Em `routes_project.py`:
+     - Transformar `@app.route('/submissao')` em `@app.route('/api/submissao', methods=['POST'])` retornando JSON puro.
+     - Adicionar rota `GET /api/submissao/<int:sub_id>` e `POST /api/submissao/<int:sub_id>/editar` retornando JSON.
+     - Adicionar rota `POST /api/submissao/<int:sub_id>/excluir` retornando JSON.
+     - Adicionar rota `GET /api/candidatura/<int:cand_id>` e `POST /api/candidatura/<int:cand_id>/editar` retornando JSON.
+     - Adicionar rota `POST /api/perfil/candidatura/<int:cand_id>/cancelar` retornando JSON.
+     - Adicionar rota `POST /api/perfil/candidatura/<int:cand_id>/<acao>` retornando JSON.
+     - Adicionar prefixo `/api` em:
+       * `/api/projeto/<int:projeto_id>/workspace`
+       * `/api/projeto/<int:projeto_id>/workspace/mensagens`
+       * `/api/projeto/<int:projeto_id>/workspace/enviar_ajax`
+       * `/api/projeto/<int:projeto_id>/avaliar` (retornando JSON)
+
+1.4. Em `routes_admin.py`:
+     - Renomear `@app.route('/coordenador')` para `@app.route('/api/coordenador')` (elimina conflito com o SPA).
+     - Renomear `@app.route('/admin/logs')` para `@app.route('/api/admin/logs')`.
+     - Criar `@app.route('/api/admin/projeto/novo', methods=['POST'])` retornando JSON.
+     - Criar `@app.route('/api/admin/projeto/<int:projeto_id>/editar', methods=['POST'])` e alias `/api/projeto/<int:projeto_id>/editar`.
+     - Adicionar aliases em `/api/admin/usuario/novo` (POST) e `/api/admin/usuario/<int:user_id>/editar` (POST/PUT).
+     - Garantir que as rotas de aprovação/rejeição de submissão retornem JSON.
+
+ETAPA 2: CORREÇÕES NO FRONTEND (REACT)
+----------------------------------------------------------------------------------------------------
+2.1. Em `ProjetoDetalhes.tsx`:
+     - Tratar com segurança o campo `projeto.detalhes` (suportando arrays de strings e arrays de objetos `{titulo, conteudo}`).
+     - Fazer requisição real para buscar avaliações e renderizá-las.
+
+2.2. Em `Workspace.tsx`:
+     - Remover dados fakes do `useEffect` e chamar `api.get('/projeto/${id}/workspace')`.
+     - Implementar envio real de mensagens no chat.
+     - Integrar tarefas reais no quadro Kanban (`api.get('/projeto/${id}/tasks')`).
+
+2.3. Em `AdminDashboard.tsx`:
+     - Remover dados fakes e chamar `api.get('/admin/dashboard')`.
+     - Conectar todos os botões de ação ("+ Novo Projeto", "Editar", "Excluir", "Aprovar", "Rejeitar", "CSV").
+
+2.4. Em `CoordenadorDashboard.tsx`:
+     - Chamar `api.get('/coordenador')`.
+     - Implementar handlers nos botões "Salvar" orientador e "Aprovar"/"Rejeitar" proposta.
+
+2.5. Em `AdminLogs.tsx`:
+     - Descomentar a requisição `api.get('/admin/logs')` e carregar os logs reais do banco.
+
+2.6. Em `Perfil.tsx`:
+     - Adicionar eventos `onClick` nos botões "Cancelar" candidatura, "Excluir" submissão, e "Aceitar"/"Recusar" candidatos.
+
+2.7. Em `Header.tsx`:
+     - Adicionar handler de alternância do tema escuro/claro.
+     - Adicionar dropdown/modal de notificações reais.
+     - Incluir link do painel de coordenador no menu para usuários com `role === 'coordenador'`.
+
+2.8. Em `App.tsx`:
+     - Adicionar rota para `/verificar-conta/:token`.
+     - Adicionar rota para `/projeto/:id/editar`.
+
+ETAPA 3: TESTES, BUILD E DEPLOY
+----------------------------------------------------------------------------------------------------
+3.1. Executar `npm run build` na pasta `frontend/`.
+3.2. Copiar os arquivos compilados de `frontend/dist/` para `SISCPTI/dist/`.
+3.3. Testar a inicialização local do servidor Flask.
+3.4. Realizar `git add`, `git commit` e `git push` para o repositório remoto (`pi2` e `origin`).
+
+====================================================================================================
+FIM DO RELATÓRIO
+====================================================================================================
