@@ -103,89 +103,121 @@ export function ErrorPage({ code: propCode, title: propTitle, message: propMessa
   const displayMessage = propMessage || errorData.message;
 
   return (
-    <div className="min-h-[calc(100vh-140px)] flex items-center justify-center px-4 py-12 bg-bg-primary transition-colors">
-      <div className="w-full max-w-4xl bg-bg-surface border border-border-color rounded-md shadow-sm p-8 md:p-12 transition-colors">
-        
-        <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
+    <div className="w-full min-h-[calc(100vh-140px)] flex flex-col justify-between py-6 md:py-12 px-6 sm:px-10 md:px-16 lg:px-24 bg-bg-primary transition-colors">
+      
+      {/* Barra Superior / Breadcrumb Institucional */}
+      <div className="w-full max-w-7xl mx-auto flex items-center justify-between pb-6 border-b border-border-color">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-secondary">
+          <Link to="/" className="text-purple-primary hover:text-purple-hover hover:underline">SisCPTI</Link>
+          <span>/</span>
+          <span>Status HTTP {errorData.code}</span>
+        </div>
+        <div className="text-[11px] text-text-secondary/70 hidden sm:block">
+          Centro Universitário de Brasília · UniCEUB
+        </div>
+      </div>
+
+      {/* Conteúdo Central em Tela Cheia */}
+      <div className="w-full max-w-7xl mx-auto my-auto py-8 md:py-12 flex-1 flex items-center">
+        <div className="w-full grid grid-cols-1 lg:grid-cols-12 items-center gap-10 lg:gap-16">
           
-          {/* Ilustração SVG Institucional */}
-          <div className="w-full md:w-1/2 flex justify-center">
-            <div className="relative w-full max-w-[340px] md:max-w-[380px] p-2 flex items-center justify-center">
+          {/* Coluna da Ilustração SVG em Escala Ampla */}
+          <div className="lg:col-span-7 flex justify-center order-1 lg:order-1">
+            <div className="w-full max-w-[500px] lg:max-w-[620px] flex items-center justify-center">
               <img 
                 src={errorData.image} 
                 alt={`Ilustração do Erro ${errorData.code}`}
-                className="w-full h-auto max-h-[320px] object-contain drop-shadow-sm select-none pointer-events-none"
+                className="w-full h-auto max-h-[380px] lg:max-h-[460px] object-contain select-none pointer-events-none drop-shadow-sm"
                 loading="eager"
               />
             </div>
           </div>
 
-          {/* Conteúdo e Informações do Erro */}
-          <div className="w-full md:w-1/2 flex flex-col text-left">
+          {/* Coluna de Textos e Ações Institucionais */}
+          <div className="lg:col-span-5 flex flex-col text-left order-2 lg:order-2">
             
-            {/* Badge Institucional do Código */}
-            <div className="mb-3">
-              <span className={`inline-block px-2.5 py-1 text-[11px] font-bold tracking-wider rounded border ${errorData.badgeColor}`}>
+            {/* Código Numérico em Destaque Tipográfico */}
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-6xl lg:text-7xl font-black text-purple-primary/25 tracking-tighter leading-none select-none">
+                {errorData.code}
+              </span>
+              <span className={`inline-block px-3 py-1 text-xs font-bold tracking-wider rounded border ${errorData.badgeColor}`}>
                 {errorData.badge}
               </span>
             </div>
 
             {/* Título */}
-            <h1 className="text-2xl md:text-3xl font-bold text-text-primary tracking-tight m-0 mb-3">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-text-primary tracking-tight leading-tight m-0 mb-4">
               {displayTitle}
             </h1>
 
-            {/* Mensagem Explicativa */}
-            <p className="text-sm text-text-secondary leading-relaxed m-0 mb-6 max-w-md">
+            {/* Mensagem Detalhada */}
+            <p className="text-sm sm:text-base text-text-secondary leading-relaxed m-0 mb-8 max-w-xl">
               {displayMessage}
             </p>
 
-            {/* Ações / Botões Sóbrios */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t border-border-color">
+            {/* Botões de Ação */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-4 border-t border-border-color">
               {errorData.primaryAction.onClick ? (
                 <button
                   type="button"
                   onClick={errorData.primaryAction.onClick}
-                  className="py-2.5 px-5 bg-purple-primary hover:bg-purple-hover text-white text-xs font-semibold rounded-md shadow-sm transition-colors text-center cursor-pointer border-none"
+                  className="py-3 px-6 bg-purple-primary hover:bg-purple-hover text-white text-sm font-semibold rounded-md shadow-sm transition-colors text-center cursor-pointer border-none flex items-center justify-center gap-2"
                 >
-                  {errorData.primaryAction.label}
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>{errorData.primaryAction.label}</span>
                 </button>
               ) : (
                 <Link
                   to={errorData.primaryAction.to || '/'}
-                  className="py-2.5 px-5 bg-purple-primary hover:bg-purple-hover text-white text-xs font-semibold rounded-md shadow-sm transition-colors text-center no-underline"
+                  className="py-3 px-6 bg-purple-primary hover:bg-purple-hover text-white text-sm font-semibold rounded-md shadow-sm transition-colors text-center no-underline flex items-center justify-center gap-2"
                 >
-                  {errorData.primaryAction.label}
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  <span>{errorData.primaryAction.label}</span>
                 </Link>
               )}
 
               {errorData.secondaryAction && (
                 <Link
                   to={errorData.secondaryAction.to}
-                  className="py-2.5 px-5 bg-transparent border border-border-color hover:border-purple-primary text-text-primary hover:text-purple-primary text-xs font-semibold rounded-md transition-colors text-center no-underline"
+                  className="py-3 px-6 bg-bg-surface hover:bg-bg-primary border border-border-color hover:border-purple-primary text-text-primary hover:text-purple-primary text-sm font-semibold rounded-md transition-colors text-center no-underline"
                 >
                   {errorData.secondaryAction.label}
                 </Link>
               )}
             </div>
 
-            {/* Suporte Institucional */}
-            <div className="mt-6 pt-4 text-xs text-text-secondary/80 border-t border-border-color/60">
-              <p className="m-0">
-                Precisa de assistência acadêmica?{' '}
-                <Link to="/sobre" className="text-purple-primary hover:text-purple-hover hover:underline font-medium">
-                  Consulte as informações institucionais
-                </Link>
-                .
-              </p>
+            {/* Links Rápidos Institucionais */}
+            <div className="mt-8 pt-6 border-t border-border-color/60 text-xs text-text-secondary">
+              <span className="font-semibold text-text-primary mr-2">Acesso rápido:</span>
+              <div className="inline-flex flex-wrap gap-x-4 gap-y-1 mt-1 sm:mt-0">
+                <Link to="/" className="text-purple-primary hover:text-purple-hover hover:underline">Página Inicial</Link>
+                <span>·</span>
+                <Link to="/projetos" className="text-purple-primary hover:text-purple-hover hover:underline">Caderno de Projetos</Link>
+                <span>·</span>
+                <Link to="/sobre" className="text-purple-primary hover:text-purple-hover hover:underline">Sobre o UniCEUB</Link>
+                <span>·</span>
+                <Link to="/login" className="text-purple-primary hover:text-purple-hover hover:underline">Área de Login</Link>
+              </div>
             </div>
 
           </div>
 
         </div>
-
       </div>
+
+      {/* Faixa Inferior de Apoio */}
+      <div className="w-full max-w-7xl mx-auto pt-6 border-t border-border-color text-xs text-text-secondary/70 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <p className="m-0">SisCPTI · Sistema de Gestão do Caderno de Projetos de Tecnologia da Informação</p>
+        <p className="m-0">Suporte Institucional: nucleoti@ceub.edu.br</p>
+      </div>
+
     </div>
   );
 }
+
 
