@@ -215,7 +215,7 @@ export function Header() {
                           onClick={() => setMenuOpen(false)}
                           className="block px-4 py-2.5 text-purple-primary hover:bg-purple-primary/5 hover:text-purple-hover font-medium text-sm no-underline"
                         >
-                          ⚙️ Painel Admin
+                          🛡️ Painel Administrativo
                         </Link>
                       )}
                       {(user.role === 'coordenador' || user.role === 'admin') && (
@@ -224,7 +224,7 @@ export function Header() {
                           onClick={() => setMenuOpen(false)}
                           className="block px-4 py-2.5 text-purple-primary hover:bg-purple-primary/5 hover:text-purple-hover font-medium text-sm no-underline"
                         >
-                          🎓 Painel Coordenador
+                          📋 Painel da Coordenação
                         </Link>
                       )}
                       <Link 
@@ -232,14 +232,24 @@ export function Header() {
                         onClick={() => setMenuOpen(false)}
                         className="block px-4 py-2.5 text-purple-primary hover:bg-purple-primary/5 hover:text-purple-hover font-medium text-sm no-underline"
                       >
-                        {(user.role === 'admin' || user.role === 'coordenador') ? '👤 Meu Perfil' : '🎓 Painel do Aluno'}
+                        {user.role === 'professor' 
+                          ? '👨‍🏫 Painel do Orientador' 
+                          : (user.role === 'empresa' || user.role === 'cliente') 
+                          ? '🏢 Portal da Empresa / Parceiro'
+                          : (user.role === 'admin' || user.role === 'coordenador') 
+                          ? '👤 Meu Perfil' 
+                          : user.role === 'lider'
+                          ? '🚀 Painel da Liderança'
+                          : '🎓 Painel do Aluno'}
                       </Link>
                       <Link 
                         to="/submissao" 
                         onClick={() => setMenuOpen(false)}
                         className="block px-4 py-2.5 text-purple-primary hover:bg-purple-primary/5 hover:text-purple-hover font-medium text-sm no-underline"
                       >
-                        📤 Submissão de Proposta
+                        {(user.role === 'empresa' || user.role === 'cliente') 
+                          ? '💡 Submeter Demanda de Projeto' 
+                          : '📤 Submeter Proposta'}
                       </Link>
                       <div className="h-px bg-border-color my-1"></div>
                       <button 

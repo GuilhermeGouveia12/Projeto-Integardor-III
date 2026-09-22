@@ -66,7 +66,11 @@ def api_cadastro():
     if User.query.filter_by(email=email).first():
         return jsonify({"status": "error", "message": "Este e-mail já está associado a outra conta."}), 400
 
-    novo_usuario = User(username=username, email=email, password=generate_password_hash(password), role="user", ativo=False)
+    requested_role = (data.get('role') or 'aluno').strip().lower()
+    allowed_roles = ['aluno', 'professor', 'empresa', 'cliente']
+    role = requested_role if requested_role in allowed_roles else 'aluno'
+
+    novo_usuario = User(username=username, email=email, password=generate_password_hash(password), role=role, ativo=False)
     db.session.add(novo_usuario)
     db.session.commit()
 

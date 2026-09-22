@@ -7,6 +7,7 @@ export function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [role, setRole] = useState<'aluno' | 'professor' | 'empresa'>('aluno');
   const [showPassword, setShowPassword] = useState(false);
   
   const [error, setError] = useState('');
@@ -37,7 +38,8 @@ export function Register() {
         username: username.trim(), 
         email: email.trim(), 
         password, 
-        confirm 
+        confirm,
+        role
       });
 
       if (response.data.status === 'success') {
@@ -106,6 +108,53 @@ export function Register() {
 
         {/* Formulário */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Tipo de Perfil / Cargo */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
+              Perfil Institucional / Tipo de Conta
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole('aluno')}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold border transition-all text-center cursor-pointer ${
+                  role === 'aluno'
+                    ? 'bg-purple-primary text-white border-purple-primary shadow-sm'
+                    : 'bg-bg-primary text-text-secondary border-border-color hover:border-purple-primary/50'
+                }`}
+              >
+                🎓 Aluno
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('professor')}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold border transition-all text-center cursor-pointer ${
+                  role === 'professor'
+                    ? 'bg-purple-primary text-white border-purple-primary shadow-sm'
+                    : 'bg-bg-primary text-text-secondary border-border-color hover:border-purple-primary/50'
+                }`}
+              >
+                👨‍🏫 Professor
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('empresa')}
+                className={`py-2 px-2 rounded-lg text-xs font-semibold border transition-all text-center cursor-pointer ${
+                  role === 'empresa'
+                    ? 'bg-purple-primary text-white border-purple-primary shadow-sm'
+                    : 'bg-bg-primary text-text-secondary border-border-color hover:border-purple-primary/50'
+                }`}
+              >
+                🏢 Empresa / Parceiro
+              </button>
+            </div>
+            <p className="text-[11px] text-text-secondary mt-1.5 m-0">
+              {role === 'aluno' && 'Para estudantes interessados em se candidatar a vagas e desenvolver projetos.'}
+              {role === 'professor' && 'Para docentes do UniCEUB que irão orientar equipes e acompanhar projetos.'}
+              {role === 'empresa' && 'Para empresas e parceiros externos interessados em propor problemas e acompanhar MVPs.'}
+            </p>
+          </div>
+
           <div>
             <label 
               htmlFor="username" 

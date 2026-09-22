@@ -89,13 +89,26 @@ def api_perfil():
         return jsonify({"status": "error", "message": "Não autenticado."}), 401
         
     username = session['user']
+    user_obj = User.query.filter_by(username=username).first()
+    user_role = session.get('role') or (user_obj.role if user_obj else 'aluno')
+
     minhas_candidaturas = [{"id": c.id, "projeto_id": c.projeto_id, "projeto": c.projeto.titulo if c.projeto else "", "status": c.status} for c in Application.query.filter_by(username=username).all()]
     meus_projetos = [p.to_dict() for p in Project.query.filter_by(owner_username=username).all()]
-    minhas_submissoes = [{"id": s.id, "nome_projeto": s.nome_projeto, "status": s.status} for s in Submission.query.filter_by(username=username).all()]
+    minhas_submissoes = [s.to_dict() for s in Submission.query.filter_by(username=username).all()]
     
+    projetos_orientados = []
+    if user_obj and (user_role == 'professor' or user_obj.role == 'professor'):
+        orient_objs = Project.query.filter(
+            (Project.professor_id == user_obj.id) | (Project.professor == username) | (Project.professor == user_obj.username)
+        ).all()
+        projetos_orientados = [p.to_dict() for p in orient_objs]
+        existing_ids = {p['id'] for p in meus_projetos}
+        for op in projetos_orientados:
+            if op['id'] not in existing_ids:
+                meus_projetos.append(op)
+
     recomendacoes = []
-    if session.get('role') in ['aluno', 'lider', 'user']:
-        user_obj = User.query.filter_by(username=username).first()
+    if user_role in ['aluno', 'lider', 'user']:
         if user_obj and user_obj.interesses:
             interesses_list = [i.strip().lower() for i in user_obj.interesses.split(',') if i.strip()]
             if interesses_list:
@@ -117,8 +130,10 @@ def api_perfil():
     return jsonify({
         "status": "success",
         "data": {
+            "role": user_role,
             "minhas_candidaturas": minhas_candidaturas,
             "meus_projetos": meus_projetos,
+            "projetos_orientados": projetos_orientados,
             "minhas_submissoes": minhas_submissoes,
             "recomendacoes": recomendacoes
         }

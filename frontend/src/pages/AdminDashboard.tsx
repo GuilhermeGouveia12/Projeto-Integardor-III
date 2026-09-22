@@ -924,7 +924,10 @@ export function AdminDashboard() {
                 <option value="admin">Administrador</option>
                 <option value="coordenador">Coordenador</option>
                 <option value="professor">Professor / Orientador</option>
+                <option value="empresa">Empresa Parceira</option>
+                <option value="cliente">Cliente / PO Externo</option>
                 <option value="aluno">Aluno / Membro</option>
+                <option value="lider">Líder de Equipe</option>
               </select>
             </div>
 
@@ -970,6 +973,12 @@ export function AdminDashboard() {
                         ? 'bg-purple-primary/10 text-purple-primary border border-purple-primary/20'
                         : u.role === 'coordenador'
                         ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                        : u.role === 'professor'
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                        : (u.role === 'empresa' || u.role === 'cliente')
+                        ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20'
+                        : u.role === 'lider'
+                        ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
                         : 'bg-bg-primary text-text-secondary border border-border-color';
 
                       return (
