@@ -10,8 +10,21 @@ dist_dir = os.path.join(base_dir, 'dist')
 @app.route('/assets/<path:path>')
 def serve_react_assets(path):
     assets_dir = os.path.join(dist_dir, 'assets')
-    if os.path.exists(os.path.join(assets_dir, path)):
+    full_path = os.path.join(assets_dir, path)
+    if os.path.exists(full_path):
         return send_from_directory(assets_dir, path)
+    
+    # Fallback inteligente se o navegador estiver com index.html em cache requisitando hash anterior
+    if os.path.exists(assets_dir):
+        if path.endswith('.js'):
+            js_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.js')]
+            if js_files:
+                return send_from_directory(assets_dir, js_files[0])
+        elif path.endswith('.css'):
+            css_files = [f for f in os.listdir(assets_dir) if f.startswith('index-') and f.endswith('.css')]
+            if css_files:
+                return send_from_directory(assets_dir, css_files[0])
+
     abort(404)
 
 # =========================
@@ -44,9 +57,13 @@ def serve_react_app(path):
     if path != "" and os.path.exists(target):
         return send_from_directory(dist_dir, path)
         
-    # Para qualquer rota SPA (/projetos, /sobre, /login, etc.), serve o index.html compilado do React
+    # Para qualquer rota SPA (/projetos, /sobre, /login, etc.), serve o index.html compilado do React sem cache
     if os.path.exists(os.path.join(dist_dir, 'index.html')):
-        return send_from_directory(dist_dir, 'index.html')
+        resp = send_from_directory(dist_dir, 'index.html')
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        resp.headers['Pragma'] = 'no-cache'
+        resp.headers['Expires'] = '0'
+        return resp
         
     return jsonify({"status": "error", "message": "Frontend build não encontrado"}), 404
 
