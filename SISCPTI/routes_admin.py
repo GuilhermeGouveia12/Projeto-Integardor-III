@@ -1,6 +1,6 @@
 from flask import request, redirect, url_for, flash, session, abort, jsonify, Response
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, timedelta
 import json, os, uuid, io, csv
 
 from app_instance import app
@@ -61,12 +61,16 @@ def api_notificacoes():
     username = session['user']
     notifs = Notification.query.filter_by(username=username, lida=False).order_by(Notification.data_criacao.desc()).all()
     
+    BRT = timedelta(hours=-3)  # Horário de Brasília = UTC-3
     output = []
     for n in notifs:
-        # Bug 1: data_criacao pode ser None ou ter timezone (TIMESTAMPTZ do Postgres)
         data_val = n.data_criacao
-        if data_val and hasattr(data_val, 'tzinfo') and data_val.tzinfo is not None:
-            data_val = data_val.replace(tzinfo=None)
+        if data_val:
+            # Remove timezone info do Postgres (TIMESTAMPTZ) para trabalhar como UTC naive
+            if hasattr(data_val, 'tzinfo') and data_val.tzinfo is not None:
+                data_val = data_val.replace(tzinfo=None)
+            # Converte de UTC para horário de Brasília (UTC-3)
+            data_val = data_val + BRT
         data_str = data_val.strftime('%d/%m %H:%M') if data_val else ''
         output.append({
             "id": n.id,
