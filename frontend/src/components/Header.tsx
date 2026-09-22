@@ -91,10 +91,10 @@ export function Header() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
     setMenuOpen(false);
-    navigate('/login');
+    navigate('/login', { replace: true, state: { loggedOut: true } });
+    await logout();
   };
 
   return (

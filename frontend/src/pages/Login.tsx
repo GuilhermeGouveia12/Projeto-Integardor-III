@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 
 function getDashboardRoute(role?: string): string {
   if (role === 'admin') return '/admin';
@@ -18,13 +18,15 @@ export function Login() {
   
   const { user, login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isLoggedOut = location.state?.loggedOut;
 
-  // Se o usuário já estiver logado, redireciona diretamente para seu painel
+  // Se o usuário já estiver logado (e não acabou de clicar em sair), redireciona diretamente para seu painel
   useEffect(() => {
-    if (user) {
+    if (user && !isLoggedOut) {
       navigate(getDashboardRoute(user.role), { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, isLoggedOut]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +70,19 @@ export function Login() {
             SisCPTI · Caderno de Projetos de TI do UniCEUB
           </p>
         </div>
+
+        {/* Confirmação de Logout */}
+        {isLoggedOut && !error && (
+          <div 
+            role="status" 
+            className="mb-5 p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex items-start gap-2.5 text-xs text-emerald-700 dark:text-emerald-300"
+          >
+            <svg className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+            </svg>
+            <span className="leading-relaxed font-medium">Sessão encerrada com sucesso.</span>
+          </div>
+        )}
 
         {/* Mensagem de Erro Institucional */}
         {error && (
