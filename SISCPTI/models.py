@@ -38,6 +38,20 @@ class Project(db.Model):
     orientador = db.relationship('User', foreign_keys=[professor_id], backref=db.backref('projetos_orientados', lazy=True)) 
 
     def to_dict(self):
+        detalhes_val = []
+        if self.detalhes:
+            try:
+                detalhes_val = json.loads(self.detalhes)
+            except Exception:
+                detalhes_val = [{"titulo": "Detalhes", "conteudo": str(self.detalhes)}]
+                
+        links_val = {}
+        if self.links:
+            try:
+                links_val = json.loads(self.links)
+            except Exception:
+                links_val = {}
+
         return {
             "id": self.id,
             "titulo": self.titulo,
@@ -46,8 +60,8 @@ class Project(db.Model):
             "categoria": self.categoria,
             "descricao_curta": self.descricao_curta,
             "imagem": self.imagem,
-            "detalhes": json.loads(self.detalhes),
-            "links": json.loads(self.links) if self.links else {},
+            "detalhes": detalhes_val,
+            "links": links_val,
             "owner_username": self.owner_username
         }
 

@@ -22,12 +22,20 @@ db_url = os.environ.get('DATABASE_URL', 'sqlite:///siscpti.db')
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
+if db_url.startswith("postgresql://") and "sslmode" not in db_url:
+    db_url += ("&" if "?" in db_url else "?") + "sslmode=require"
+
 # No Vercel, o sistema de arquivos é apenas leitura (read-only), exceto /tmp.
 if os.environ.get('VERCEL') == '1' and db_url.startswith('sqlite'):
     db_url = f"sqlite:///{os.path.join(tempfile.gettempdir(), 'siscpti.db')}"
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+if db_url.startswith("postgresql://"):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300
+    }
 
 if os.environ.get('VERCEL') == '1':
     UPLOAD_FOLDER = os.path.join(tempfile.gettempdir(), 'uploads')
