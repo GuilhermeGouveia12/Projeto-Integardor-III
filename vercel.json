@@ -16,6 +16,7 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "SISCPTI/app.py" },
     { "src": "/assets/(.*)", "dest": "frontend/dist/assets/$1" },
+    { "src": "/static/(.*)", "dest": "frontend/dist/static/$1" },
     { "src": "/(.*)", "dest": "frontend/dist/index.html" }
   ]
 }

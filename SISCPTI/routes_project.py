@@ -11,8 +11,8 @@ from utils import log_atividade, upload_file_to_supabase
 # =========================
 # Catálogo e Detalhes
 # =========================
-@app.route('/projetos')
-def projetos():
+@app.route('/api/projetos', methods=['GET'])
+def api_projetos():
     tag_filter = request.args.get('tag', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = 6
@@ -23,7 +23,6 @@ def projetos():
         
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     
-    # Coletar todas as tags únicas dos projetos para o painel de filtros
     all_projects = Project.query.all()
     unique_tags = set()
     for p in all_projects:
@@ -33,81 +32,74 @@ def projetos():
                 if cleaned:
                     unique_tags.add(cleaned)
                     
-    return render_template(
-        'projetos.html',
-        projetos=[p.to_dict() for p in pagination.items],
-        pagination=pagination,
-        unique_tags=sorted(list(unique_tags)),
-        selected_tag=tag_filter
-    )
+    return jsonify({
+        "status": "success",
+        "projetos": [p.to_dict() for p in pagination.items],
+        "tags": sorted(list(unique_tags)),
+        "page": page,
+        "total_pages": pagination.pages,
+        "total_items": pagination.total
+    })
 
-@app.route('/projeto/<int:projeto_id>')
-def projeto_detalhes(projeto_id):
+@app.route('/api/projeto/<int:projeto_id>', methods=['GET'])
+def api_projeto_detalhes(projeto_id):
     projeto_db = Project.query.get(projeto_id)
     if not projeto_db:
-        abort(404)
-    projeto = projeto_db.to_dict()
-    return render_template('projeto_detalhes.html', projeto=projeto)
+        return jsonify({"status": "error", "message": "Projeto não encontrado"}), 404
+    return jsonify({"status": "success", "projeto": projeto_db.to_dict()})
 
 # =========================
 # Candidaturas de Alunos
 # =========================
-@app.route('/projeto/<int:projeto_id>/candidatar', methods=['GET', 'POST'])
-def candidatar(projeto_id):
+@app.route('/api/projeto/<int:projeto_id>/candidatar', methods=['POST'])
+def api_candidatar(projeto_id):
     if not session.get('logged_in'):
-        flash("⚠️ Você precisa estar logado para se candidatar a um projeto.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Não autenticado."}), 401
 
     projeto_db = Project.query.get(projeto_id)
     if not projeto_db:
-        abort(404)
+        return jsonify({"status": "error", "message": "Projeto não encontrado."}), 404
 
-    if request.method == 'POST':
-        nova_cand = Application(
-            projeto_id=projeto_id,
-            username=session['user'],
-            motivo=request.form.get('motivo'),
-            experiencia=request.form.get('experiencia')
+    data = request.get_json()
+    nova_cand = Application(
+        projeto_id=projeto_id,
+        username=session['user'],
+        motivo=data.get('motivo'),
+        experiencia=data.get('experiencia')
+    )
+    db.session.add(nova_cand)
+    
+    if projeto_db.owner_username:
+        notif = Notification(
+            username=projeto_db.owner_username,
+            mensagem=f"👤 {session['user']} se candidatou ao seu projeto '{projeto_db.titulo}'!",
+            link="/perfil"
         )
-        db.session.add(nova_cand)
+        db.session.add(notif)
         
-        # Notificar o dono do projeto
-        if projeto_db.owner_username:
-            notif = Notification(
-                username=projeto_db.owner_username,
-                mensagem=f"👤 {session['user']} se candidatou ao seu projeto '{projeto_db.titulo}'!",
-                link="/perfil"
-            )
-            db.session.add(notif)
-            
-        db.session.commit()
-        flash("✅ Sua candidatura foi enviada com sucesso! Aguarde o retorno do professor/dono do projeto.", "success")
-        return redirect(url_for('projeto_detalhes', projeto_id=projeto_id))
-
-    return render_template('candidatura.html', projeto=projeto_db.to_dict())
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Candidatura enviada com sucesso!"})
 
 # =========================
 # Perfil e Ações do Dono
 # =========================
-@app.route('/perfil')
-def perfil():
+@app.route('/api/perfil', methods=['GET'])
+def api_perfil():
     if not session.get('logged_in'):
-        flash("Você precisa estar logado para acessar seu perfil.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Não autenticado."}), 401
         
     username = session['user']
-    minhas_candidaturas = Application.query.filter_by(username=username).all()
-    meus_projetos = Project.query.filter_by(owner_username=username).all()
-    minhas_submissoes = Submission.query.filter_by(username=username).all()
+    minhas_candidaturas = [{"id": c.id, "projeto_id": c.projeto_id, "projeto": c.projeto.titulo if c.projeto else "", "status": c.status} for c in Application.query.filter_by(username=username).all()]
+    meus_projetos = [p.to_dict() for p in Project.query.filter_by(owner_username=username).all()]
+    minhas_submissoes = [{"id": s.id, "nome_projeto": s.nome_projeto, "status": s.status} for s in Submission.query.filter_by(username=username).all()]
     
-    # Algoritmo de recomendação de projetos para o perfil do Aluno
     recomendacoes = []
     if session.get('role') in ['aluno', 'lider', 'user']:
         user_obj = User.query.filter_by(username=username).first()
         if user_obj and user_obj.interesses:
             interesses_list = [i.strip().lower() for i in user_obj.interesses.split(',') if i.strip()]
             if interesses_list:
-                candidatados_ids = [c.projeto_id for c in minhas_candidaturas]
+                candidatados_ids = [c['projeto_id'] for c in minhas_candidaturas]
                 all_projs = Project.query.filter(Project.status != 'CONCLUÍDO').all()
                 
                 project_scores = []
@@ -122,13 +114,15 @@ def perfil():
                 project_scores.sort(key=lambda x: x[1], reverse=True)
                 recomendacoes = [item[0].to_dict() for item in project_scores[:3]]
                 
-    return render_template(
-        'perfil.html', 
-        minhas_candidaturas=minhas_candidaturas, 
-        meus_projetos=meus_projetos, 
-        minhas_submissoes=minhas_submissoes,
-        recomendacoes=recomendacoes
-    )
+    return jsonify({
+        "status": "success",
+        "data": {
+            "minhas_candidaturas": minhas_candidaturas,
+            "meus_projetos": meus_projetos,
+            "minhas_submissoes": minhas_submissoes,
+            "recomendacoes": recomendacoes
+        }
+    })
 
 @app.route('/perfil/candidatura/<int:cand_id>/<acao>')
 def dono_acao_candidatura(cand_id, acao):

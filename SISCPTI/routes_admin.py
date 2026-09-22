@@ -8,22 +8,29 @@ from models import db, Project, Submission, Application, User, Notification, Act
 from utils import log_atividade, upload_file_to_supabase
 
 # =========================
-# Área administrativa
+# Área administrativa API
 # =========================
-@app.route('/admin')
-def admin_dashboard():
+@app.route('/api/admin/dashboard', methods=['GET'])
+def api_admin_dashboard():
     if session.get('role') != 'admin':
-        flash("Acesso restrito. Faça login como administrador.", "error")
-        return redirect(url_for('login'))
+        return jsonify({"status": "error", "message": "Acesso restrito."}), 403
 
     projetos_db = Project.query.all()
     projetos = [p.to_dict() for p in projetos_db]
     
-    submissoes = Submission.query.all()
-    candidaturas = Application.query.all()
-    usuarios = User.query.all()
+    submissoes = [{"id": s.id, "nome_projeto": s.nome_projeto, "categoria": s.categoria, "proponente": s.proponente, "status": s.status} for s in Submission.query.all()]
+    candidaturas = [{"id": c.id, "projeto": c.projeto.titulo if c.projeto else "", "username": c.username, "status": c.status} for c in Application.query.all()]
+    usuarios = [{"id": u.id, "username": u.username, "role": u.role, "email": u.email, "ativo": u.ativo} for u in User.query.all()]
 
-    return render_template('admin_dashboard.html', projetos=projetos, submissoes=submissoes, candidaturas=candidaturas, usuarios=usuarios)
+    return jsonify({
+        "status": "success",
+        "data": {
+            "projetos": projetos,
+            "submissoes": submissoes,
+            "candidaturas": candidaturas,
+            "usuarios": usuarios
+        }
+    })
 
 @app.route('/api/admin/stats')
 def api_admin_stats():
@@ -31,7 +38,6 @@ def api_admin_stats():
         return jsonify({"error": "Unauthorized"}), 401
         
     projects = Project.query.all()
-    
     status_counts = {}
     category_counts = {}
     
@@ -47,7 +53,7 @@ def api_admin_stats():
 # =========================
 # API de Notificações
 # =========================
-@app.route('/api/notificacoes')
+@app.route('/api/notificacoes', methods=['GET'])
 def api_notificacoes():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
@@ -63,7 +69,7 @@ def api_notificacoes():
             "data": n.data_criacao.strftime('%d/%m %H:%M'),
             "link": n.link
         })
-    return jsonify(output)
+    return jsonify({"status": "success", "data": output})
 
 @app.route('/api/notificacoes/ler/<int:notif_id>', methods=['POST'])
 def api_ler_notificacao(notif_id):
@@ -89,81 +95,61 @@ def api_ler_todas_notificacoes():
     return jsonify({"status": "success"})
 
 # =========================
-# CRUD Usuários (Admin)
+# CRUD Usuários (Admin API)
 # =========================
-@app.route('/admin/usuario/novo', methods=['GET', 'POST'])
-def admin_novo_usuario():
+@app.route('/api/admin/usuario', methods=['POST'])
+def api_admin_novo_usuario():
     if session.get('role') != 'admin':
-        flash("Acesso restrito a administradores.", "error")
-        return redirect(url_for('index'))
+        return jsonify({"status": "error", "message": "Acesso restrito."}), 403
     
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        role = request.form.get('role', 'user')
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', 'user')
+    
+    if User.query.filter_by(username=username).first():
+        return jsonify({"status": "error", "message": "Usuário já existe."}), 400
         
-        if User.query.filter_by(username=username).first():
-            flash("⚠️ Este nome de usuário já existe.", "error")
-            return redirect(url_for('admin_novo_usuario'))
-            
-        from werkzeug.security import generate_password_hash
-        hashed_pw = generate_password_hash(password)
-        novo_u = User(username=username, password=hashed_pw, role=role)
-        db.session.add(novo_u)
-        db.session.commit()
-        flash("✅ Usuário criado com sucesso!", "success")
-        return redirect(url_for('admin_dashboard'))
-        
-    return render_template('admin_user_form.html', usuario=None)
+    from werkzeug.security import generate_password_hash
+    hashed_pw = generate_password_hash(password)
+    novo_u = User(username=username, password=hashed_pw, role=role, ativo=True)
+    db.session.add(novo_u)
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Usuário criado."})
 
-@app.route('/admin/usuario/editar/<int:user_id>', methods=['GET', 'POST'])
-def admin_editar_usuario(user_id):
+@app.route('/api/admin/usuario/<int:user_id>', methods=['PUT', 'DELETE'])
+def api_admin_usuario(user_id):
     if session.get('role') != 'admin':
-        flash("Acesso restrito a administradores.", "error")
-        return redirect(url_for('index'))
+        return jsonify({"status": "error", "message": "Acesso restrito."}), 403
         
     u = User.query.get(user_id)
     if not u:
-        abort(404)
+        return jsonify({"status": "error", "message": "Não encontrado."}), 404
         
-    if request.method == 'POST':
-        new_username = request.form.get('username')
-        if new_username != u.username and User.query.filter_by(username=new_username).first():
-            flash("⚠️ Este nome de usuário já existe.", "error")
-            return redirect(url_for('admin_editar_usuario', user_id=user_id))
+    if request.method == 'DELETE':
+        if u.username == session.get('user'):
+            return jsonify({"status": "error", "message": "Não pode excluir a si mesmo."}), 400
+        db.session.delete(u)
+        db.session.commit()
+        return jsonify({"status": "success", "message": "Excluído com sucesso."})
+        
+    if request.method == 'PUT':
+        data = request.get_json()
+        new_username = data.get('username')
+        if new_username and new_username != u.username and User.query.filter_by(username=new_username).first():
+            return jsonify({"status": "error", "message": "Usuário já existe."}), 400
             
-        u.username = new_username
-        
-        plain_pw = request.form.get('password')
+        if new_username: u.username = new_username
+        plain_pw = data.get('password')
         if plain_pw:
             from werkzeug.security import generate_password_hash
             u.password = generate_password_hash(plain_pw)
             
-        if u.username != session.get('user'):
-            u.role = request.form.get('role', 'user')
+        if u.username != session.get('user') and 'role' in data:
+            u.role = data.get('role', 'user')
         
         db.session.commit()
-        flash("✅ Usuário atualizado com sucesso!", "success")
-        return redirect(url_for('admin_dashboard'))
-        
-    return render_template('admin_user_form.html', usuario=u)
-
-@app.route('/admin/usuario/excluir/<int:user_id>')
-def admin_excluir_usuario(user_id):
-    if session.get('role') != 'admin':
-        flash("Acesso restrito a administradores.", "error")
-        return redirect(url_for('index'))
-        
-    u = User.query.get(user_id)
-    if u:
-        if u.username == session.get('user'):
-            flash("⚠️ Você não pode excluir a si mesmo!", "error")
-        else:
-            db.session.delete(u)
-            db.session.commit()
-            flash("🗑️ Usuário excluído com sucesso!", "success")
-            
-    return redirect(url_for('admin_dashboard'))
+        return jsonify({"status": "success", "message": "Usuário atualizado."})
 
 # =========================
 # Aprovação de Submissões

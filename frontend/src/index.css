@@ -1,1 +1,32 @@
 @import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', 'Segoe UI', sans-serif;
+  --font-title: 'Outfit', 'Segoe UI', sans-serif;
+  
+  --color-purple-primary: #4B006E;
+  --color-purple-hover: #7A1BB5;
+  --color-text-primary: #1c1c1c;
+  --color-text-secondary: #555555;
+  --color-bg-primary: #f4f4f4;
+  --color-bg-surface: #ffffff;
+  --color-border-color: #dddddd;
+  
+  --shadow-light: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-title);
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
