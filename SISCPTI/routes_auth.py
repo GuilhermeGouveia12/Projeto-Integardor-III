@@ -90,19 +90,37 @@ def api_cadastro():
 
 @app.route('/api/verificar-conta/<token>', methods=['POST', 'GET'])
 def api_verificar_conta(token):
-    verification = AccountVerification.query.filter_by(token=token).first()
-    if not verification or verification.expira_em < datetime.utcnow():
-        return jsonify({"status": "error", "message": "Link de ativação inválido ou expirado."}), 400
+    try:
+        verification = AccountVerification.query.filter_by(token=token).first()
+        if not verification:
+            return jsonify({"status": "error", "message": "Link de ativação inválido ou já foi utilizado."}), 400
 
-    user = User.query.filter_by(username=verification.username).first()
-    if user:
+        # Compara datas respeitando timezone (PostgreSQL usa TIMESTAMPTZ)
+        agora = datetime.utcnow()
+        expira = verification.expira_em
+        # Remove timezone info se presente para comparação segura
+        if hasattr(expira, 'tzinfo') and expira.tzinfo is not None:
+            expira = expira.replace(tzinfo=None)
+        if expira < agora:
+            db.session.delete(verification)
+            db.session.commit()
+            return jsonify({"status": "error", "message": "O link de ativação expirou. Faça um novo cadastro."}), 400
+
+        user = User.query.filter_by(username=verification.username).first()
+        if not user:
+            return jsonify({"status": "error", "message": "Erro ao ativar: usuário não encontrado."}), 400
+
         user.ativo = True
         db.session.delete(verification)
         db.session.commit()
         log_atividade(user.username, 'Conta ativada')
-        return jsonify({"status": "success", "message": "Conta ativada com sucesso!"})
-    
-    return jsonify({"status": "error", "message": "Erro ao ativar: usuário não encontrado."}), 400
+        return jsonify({"status": "success", "message": "Conta ativada com sucesso! Você já pode fazer o login."})
+
+    except Exception as e:
+        print(f"Erro ao verificar conta: {e}")
+        db.session.rollback()
+        return jsonify({"status": "error", "message": "Erro interno ao ativar a conta. Tente novamente."}), 500
+
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
@@ -192,25 +210,41 @@ def api_recuperar_senha():
 
 @app.route('/api/redefinir-senha/<token>', methods=['POST'])
 def api_redefinir_senha(token):
-    reset = PasswordReset.query.filter_by(token=token).first()
-    if not reset or reset.expira_em < datetime.utcnow():
-        return jsonify({"status": "error", "message": "Link inválido ou expirado."}), 400
+    try:
+        reset = PasswordReset.query.filter_by(token=token).first()
+        if not reset:
+            return jsonify({"status": "error", "message": "Link inválido ou já foi utilizado."}), 400
 
-    data = request.get_json()
-    nova_senha = data.get('password', '').strip()
-    confirmar = data.get('confirm', '').strip()
-    
-    if nova_senha != confirmar:
-        return jsonify({"status": "error", "message": "As senhas não coincidem."}), 400
-    if len(nova_senha) < 4:
-        return jsonify({"status": "error", "message": "A senha deve ter pelo menos 4 caracteres."}), 400
+        # Fix timezone comparison (PostgreSQL TIMESTAMPTZ vs Python naive datetime)
+        agora = datetime.utcnow()
+        expira = reset.expira_em
+        if hasattr(expira, 'tzinfo') and expira.tzinfo is not None:
+            expira = expira.replace(tzinfo=None)
+        if expira < agora:
+            db.session.delete(reset)
+            db.session.commit()
+            return jsonify({"status": "error", "message": "O link de redefinição expirou. Solicite um novo."}), 400
+
+        data = request.get_json()
+        nova_senha = data.get('password', '').strip()
+        confirmar = data.get('confirm', '').strip()
         
-    user = User.query.filter_by(username=reset.username).first()
-    if user:
+        if nova_senha != confirmar:
+            return jsonify({"status": "error", "message": "As senhas não coincidem."}), 400
+        if len(nova_senha) < 4:
+            return jsonify({"status": "error", "message": "A senha deve ter pelo menos 4 caracteres."}), 400
+            
+        user = User.query.filter_by(username=reset.username).first()
+        if not user:
+            return jsonify({"status": "error", "message": "Erro ao redefinir a senha."}), 400
+
         user.password = generate_password_hash(nova_senha)
         db.session.delete(reset)
         db.session.commit()
         log_atividade(user.username, 'Senha redefinida via token')
         return jsonify({"status": "success", "message": "Senha redefinida com sucesso!"})
-        
-    return jsonify({"status": "error", "message": "Erro ao redefinir a senha."}), 400
+
+    except Exception as e:
+        print(f"Erro ao redefinir senha: {e}")
+        db.session.rollback()
+        return jsonify({"status": "error", "message": "Erro interno ao redefinir a senha. Tente novamente."}), 500
