@@ -57,7 +57,12 @@ function App() {
               <Route path="/admin/usuario/:id/editar" element={<AdminUserForm />} />
               <Route path="/admin/logs" element={<AdminLogs />} />
               <Route path="/coordenador" element={<CoordenadorDashboard />} />
-              <Route path="*" element={<ErrorPage />} />
+              <Route path="/401" element={<ErrorPage code={401} />} />
+              <Route path="/403" element={<ErrorPage code={403} />} />
+              <Route path="/404" element={<ErrorPage code={404} />} />
+              <Route path="/500" element={<ErrorPage code={500} />} />
+              <Route path="/erro/:code" element={<ErrorPage />} />
+              <Route path="*" element={<ErrorPage code={404} />} />
             </Routes>
           </main>
           <Footer />
