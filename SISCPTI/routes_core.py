@@ -39,7 +39,47 @@ def favicon():
 
 @app.route('/api/health')
 def health():
-    return jsonify({"status": "online", "message": "SisCPTI API operational"})
+    db_status = "unknown"
+    db_error = None
+    engine_name = None
+    try:
+        from app import run_db_migrations
+        run_db_migrations()
+        from sqlalchemy import text
+        from app_instance import db
+        db.session.execute(text('SELECT 1'))
+        db_status = "connected"
+        engine_name = db.engine.name
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db_status = "error"
+        db_error = str(e)
+
+    return jsonify({
+        "status": "online" if db_status == "connected" else "degraded",
+        "message": "SisCPTI API operational",
+        "db": db_status,
+        "engine": engine_name,
+        "db_error": db_error
+    })
+
+@app.route('/api/migrate-db', methods=['GET', 'POST'])
+def api_migrate_db():
+    try:
+        from app import run_db_migrations
+        run_db_migrations(force=True)
+        return jsonify({
+            "status": "success",
+            "message": "Migrações do banco de dados executadas com sucesso!"
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Erro ao executar migrações: {str(e)}"
+        }), 500
 
 
 # =========================
@@ -80,4 +120,13 @@ def forbidden(e):
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    return jsonify({"status": "error", "message": "Erro interno do servidor"}), 500
+    import traceback
+    traceback.print_exc()
+    original_err = getattr(e, 'original_exception', e)
+    error_msg = str(original_err) if original_err else "Erro interno do servidor"
+    print(f"[ERROR 500 HANDLER]: {error_msg}")
+    return jsonify({
+        "status": "error",
+        "message": "Erro interno do servidor",
+        "detail": error_msg
+    }), 500

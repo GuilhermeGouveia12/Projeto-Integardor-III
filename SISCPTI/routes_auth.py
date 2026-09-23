@@ -13,50 +13,55 @@ from utils import log_atividade, enviar_email, email_template_ativacao, email_te
 # =========================
 @app.route('/api/login', methods=['POST'])
 def api_login():
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error", "message": "Dados não fornecidos"}), 400
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "Dados não fornecidos"}), 400
 
-    user = data.get('user')
-    password = data.get('password')
+        user = data.get('user')
+        password = data.get('password')
 
-    usuario = User.query.filter_by(username=user).first()
+        usuario = User.query.filter_by(username=user).first()
 
-    if usuario and check_password_hash(usuario.password, password):
-        # Validação de contas aguardando homologação
-        status_aprov = getattr(usuario, 'status_aprovacao', 'APROVADO')
-        if status_aprov == 'PENDENTE':
+        if usuario and check_password_hash(usuario.password, password):
+            # Validação de contas aguardando homologação
+            status_aprov = getattr(usuario, 'status_aprovacao', 'APROVADO') or 'APROVADO'
+            if status_aprov == 'PENDENTE':
+                return jsonify({
+                    "status": "error", 
+                    "message": f"Sua conta com perfil '{usuario.role.capitalize()}' está em análise aguardando validação de um coordenador ou administrador."
+                }), 403
+
+            if status_aprov == 'REJEITADO':
+                return jsonify({
+                    "status": "error", 
+                    "message": f"A solicitação de cadastro para a conta '{usuario.username}' não foi homologada pela coordenação ou administração."
+                }), 403
+
+            if not usuario.ativo:
+                return jsonify({"status": "error", "message": "Conta não ativada. Verifique seu e-mail para ativar."}), 403
+
+            session['logged_in'] = True
+            session['user'] = usuario.username
+            session['role'] = usuario.role
+
+            log_atividade(usuario.username, 'Login realizado')
+            
             return jsonify({
-                "status": "error", 
-                "message": f"Sua conta com perfil '{usuario.role.capitalize()}' está em análise aguardando validação de um coordenador ou administrador."
-            }), 403
-
-        if status_aprov == 'REJEITADO':
-            return jsonify({
-                "status": "error", 
-                "message": f"A solicitação de cadastro para a conta '{usuario.username}' não foi homologada pela coordenação ou administração."
-            }), 403
-
-        if not usuario.ativo:
-            return jsonify({"status": "error", "message": "Conta não ativada. Verifique seu e-mail para ativar."}), 403
-
-        session['logged_in'] = True
-        session['user'] = usuario.username
-        session['role'] = usuario.role
-
-        log_atividade(usuario.username, 'Login realizado')
-        
-        return jsonify({
-            "status": "success", 
-            "message": "Login realizado com sucesso",
-            "user": {
-                "username": usuario.username,
-                "role": usuario.role,
-                "email": usuario.email
-            }
-        })
-    else:
-        return jsonify({"status": "error", "message": "Usuário ou senha incorretos"}), 401
+                "status": "success", 
+                "message": "Login realizado com sucesso",
+                "user": {
+                    "username": usuario.username,
+                    "role": usuario.role,
+                    "email": usuario.email
+                }
+            })
+        else:
+            return jsonify({"status": "error", "message": "Usuário ou senha incorretos"}), 401
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Erro interno ao autenticar: {str(e)}"}), 500
 
 @app.route('/api/cadastro', methods=['POST'])
 def api_cadastro():

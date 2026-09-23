@@ -13,40 +13,56 @@ from utils import log_atividade, upload_file_to_supabase
 # =========================
 @app.route('/api/projetos', methods=['GET'])
 def api_projetos():
-    tag_filter = request.args.get('tag', '').strip()
-    page = request.args.get('page', 1, type=int)
-    per_page = 6
-    
-    query = Project.query
-    if tag_filter:
-        query = query.filter(Project.tags.ilike(f'%{tag_filter}%'))
+    try:
+        tag_filter = request.args.get('tag', '').strip()
+        page = request.args.get('page', 1, type=int)
+        per_page = 6
         
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
-    all_projects = Project.query.all()
-    unique_tags = set()
-    for p in all_projects:
-        if p.tags:
-            for t in p.tags.split(','):
-                cleaned = t.strip()
-                if cleaned:
-                    unique_tags.add(cleaned)
-                    
-    return jsonify({
-        "status": "success",
-        "projetos": [p.to_dict() for p in pagination.items],
-        "tags": sorted(list(unique_tags)),
-        "page": page,
-        "total_pages": pagination.pages,
-        "total_items": pagination.total
-    })
+        query = Project.query
+        if tag_filter:
+            query = query.filter(Project.tags.ilike(f'%{tag_filter}%'))
+            
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        all_projects = Project.query.all()
+        unique_tags = set()
+        for p in all_projects:
+            if p.tags:
+                for t in p.tags.split(','):
+                    cleaned = t.strip()
+                    if cleaned:
+                        unique_tags.add(cleaned)
+                        
+        return jsonify({
+            "status": "success",
+            "projetos": [p.to_dict() for p in pagination.items],
+            "tags": sorted(list(unique_tags)),
+            "page": page,
+            "total_pages": pagination.pages,
+            "total_items": pagination.total
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Erro ao listar projetos: {str(e)}"
+        }), 500
 
 @app.route('/api/projeto/<int:projeto_id>', methods=['GET'])
 def api_projeto_detalhes(projeto_id):
-    projeto_db = Project.query.get(projeto_id)
-    if not projeto_db:
-        return jsonify({"status": "error", "message": "Projeto não encontrado"}), 404
-    return jsonify({"status": "success", "projeto": projeto_db.to_dict()})
+    try:
+        projeto_db = Project.query.get(projeto_id)
+        if not projeto_db:
+            return jsonify({"status": "error", "message": "Projeto não encontrado"}), 404
+        return jsonify({"status": "success", "projeto": projeto_db.to_dict()})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Erro ao carregar detalhes do projeto: {str(e)}"
+        }), 500
 
 # =========================
 # Candidaturas de Alunos

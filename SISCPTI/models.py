@@ -20,6 +20,8 @@ class User(db.Model):
     data_cadastro = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
+        status_aprov = getattr(self, 'status_aprovacao', 'APROVADO') or 'APROVADO'
+        dt_cad = getattr(self, 'data_cadastro', None)
         return {
             "id": self.id,
             "username": self.username,
@@ -28,8 +30,8 @@ class User(db.Model):
             "bio": self.bio or "",
             "interesses": self.interesses or "",
             "ativo": bool(self.ativo),
-            "status_aprovacao": self.status_aprovacao or "APROVADO",
-            "data_cadastro": self.data_cadastro.isoformat() if self.data_cadastro else None
+            "status_aprovacao": status_aprov,
+            "data_cadastro": dt_cad.isoformat() if dt_cad else None
         }
 
 import random
@@ -67,7 +69,20 @@ class Project(db.Model):
             except Exception:
                 links_val = {}
 
-        cands_aprovadas = len([c for c in self.candidaturas if c.status == 'APROVADA']) if hasattr(self, 'candidaturas') and self.candidaturas else 0
+        cands_aprovadas = 0
+        try:
+            if hasattr(self, 'candidaturas') and self.candidaturas:
+                cands_aprovadas = len([c for c in self.candidaturas if c.status == 'APROVADA'])
+        except Exception:
+            cands_aprovadas = 0
+
+        orientador_info = None
+        try:
+            if self.orientador:
+                orientador_info = {"id": self.orientador.id, "username": self.orientador.username}
+        except Exception:
+            orientador_info = None
+
         return {
             "id": self.id,
             "titulo": self.titulo,
@@ -81,7 +96,7 @@ class Project(db.Model):
             "owner_username": self.owner_username,
             "tags": self.tags or "",
             "professor_id": self.professor_id,
-            "orientador": {"id": self.orientador.id, "username": self.orientador.username} if self.orientador else None,
+            "orientador": orientador_info,
             "candidaturas_aprovadas": cands_aprovadas
         }
 

@@ -9,93 +9,107 @@ from models import User, Project, Submission
 # =========================
 # Inicialização e Migrações do DB
 # =========================
-# No Vercel (serverless), bloqueamos operações pesadas no momento de importação.
-# A conexão com o banco não deve ser feita no 'cold start' para não causar HTTP 500.
-if os.environ.get('VERCEL') != '1':
+_db_migrated = False
+
+def run_db_migrations(force=False):
+    global _db_migrated
+    if _db_migrated and not force:
+        return
+    _db_migrated = True
+
     with app.app_context():
         try:
+            # 1. Criação de tabelas se não existirem
             db.create_all()
 
-            # Migração automática de novas colunas
+            # 2. Migração automática de novas colunas
             from sqlalchemy import text, inspect as sa_inspect
-            inspector = sa_inspect(db.engine)
             with db.engine.connect() as conn:
-                # Altera tipo da coluna password no PostgreSQL se necessário
                 if db.engine.name == 'postgresql':
-                    password_len = 100
-                    try:
-                        for col in inspector.get_columns('user'):
-                            if col['name'] == 'password':
-                                password_len = getattr(col['type'], 'length', 100)
-                    except Exception:
-                        pass
-                    if password_len != 255:
-                        conn.execute(text('ALTER TABLE "user" ALTER COLUMN password TYPE VARCHAR(255)'))
-                        conn.commit()
-
-                # User: email, bio, interesses, ativo
-                user_cols = [c['name'] for c in inspector.get_columns('user')]
-                if 'email' not in user_cols:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN email VARCHAR(120)'))
-                if 'bio' not in user_cols:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN bio VARCHAR(300)'))
-                if 'interesses' not in user_cols:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN interesses VARCHAR(300)'))
-                if 'ativo' not in user_cols:
-                    if db.engine.name == 'postgresql':
-                        conn.execute(text('ALTER TABLE "user" ADD COLUMN ativo BOOLEAN DEFAULT TRUE'))
-                    else:
+                    # No PostgreSQL, ALTER TABLE ... ADD COLUMN IF NOT EXISTS é atômico, não bloqueia e leva < 5ms
+                    pg_statements = [
+                        'ALTER TABLE "user" ALTER COLUMN password TYPE VARCHAR(255)',
+                        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email VARCHAR(120)',
+                        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS bio VARCHAR(300)',
+                        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS interesses VARCHAR(300) DEFAULT \'\'',
+                        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE',
+                        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS status_aprovacao VARCHAR(20) DEFAULT \'APROVADO\'',
+                        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                        'ALTER TABLE "project" ADD COLUMN IF NOT EXISTS professor_id INTEGER',
+                        'ALTER TABLE "project" ADD COLUMN IF NOT EXISTS tags VARCHAR(300) DEFAULT \'\'',
+                        'ALTER TABLE "submission" ADD COLUMN IF NOT EXISTS tags VARCHAR(300) DEFAULT \'\'',
+                        'ALTER TABLE "rating" ADD COLUMN IF NOT EXISTS nota_organizacao INTEGER DEFAULT 5',
+                        'ALTER TABLE "rating" ADD COLUMN IF NOT EXISTS nota_orientacao INTEGER DEFAULT 5',
+                        'ALTER TABLE "rating" ADD COLUMN IF NOT EXISTS nota_aprendizado INTEGER DEFAULT 5',
+                        'ALTER TABLE "task" ADD COLUMN IF NOT EXISTS deadline DATE',
+                        'ALTER TABLE "task" ADD COLUMN IF NOT EXISTS checklist TEXT',
+                        'ALTER TABLE "task" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                        'ALTER TABLE "task" ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP',
+                        "UPDATE \"user\" SET status_aprovacao = 'APROVADO' WHERE status_aprovacao IS NULL",
+                        "UPDATE \"user\" SET data_cadastro = CURRENT_TIMESTAMP WHERE data_cadastro IS NULL"
+                    ]
+                    for stmt in pg_statements:
+                        try:
+                            conn.execute(text(stmt))
+                            conn.commit()
+                        except Exception as stmt_err:
+                            print(f"[DB MIGRATION PG NOTICE] '{stmt}': {stmt_err}")
+                else:
+                    inspector = sa_inspect(db.engine)
+                    user_cols = [c['name'] for c in inspector.get_columns('user')]
+                    if 'email' not in user_cols:
+                        conn.execute(text('ALTER TABLE "user" ADD COLUMN email VARCHAR(120)'))
+                    if 'bio' not in user_cols:
+                        conn.execute(text('ALTER TABLE "user" ADD COLUMN bio VARCHAR(300)'))
+                    if 'interesses' not in user_cols:
+                        conn.execute(text('ALTER TABLE "user" ADD COLUMN interesses VARCHAR(300)'))
+                    if 'ativo' not in user_cols:
                         conn.execute(text('ALTER TABLE "user" ADD COLUMN ativo BOOLEAN DEFAULT 1'))
-                if 'status_aprovacao' not in user_cols:
-                    conn.execute(text("ALTER TABLE \"user\" ADD COLUMN status_aprovacao VARCHAR(20) DEFAULT 'APROVADO'"))
-                if 'data_cadastro' not in user_cols:
-                    if db.engine.name == 'postgresql':
-                        conn.execute(text('ALTER TABLE "user" ADD COLUMN data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP'))
-                    else:
+                    if 'status_aprovacao' not in user_cols:
+                        conn.execute(text("ALTER TABLE \"user\" ADD COLUMN status_aprovacao VARCHAR(20) DEFAULT 'APROVADO'"))
+                    if 'data_cadastro' not in user_cols:
                         conn.execute(text('ALTER TABLE "user" ADD COLUMN data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP'))
-                    
-                # Project: professor_id, tags
-                proj_cols = [c['name'] for c in inspector.get_columns('project')]
-                if 'professor_id' not in proj_cols:
-                    conn.execute(text('ALTER TABLE "project" ADD COLUMN professor_id INTEGER'))
-                if 'tags' not in proj_cols:
-                    conn.execute(text('ALTER TABLE "project" ADD COLUMN tags VARCHAR(300)'))
-                    
-                # Submission: tags
-                sub_cols = [c['name'] for c in inspector.get_columns('submission')]
-                if 'tags' not in sub_cols:
-                    conn.execute(text('ALTER TABLE "submission" ADD COLUMN tags VARCHAR(300)'))
-                    
-                # Rating: nota_organizacao, nota_orientacao, nota_aprendizado
-                rating_cols = [c['name'] for c in inspector.get_columns('rating')]
-                if 'nota_organizacao' not in rating_cols:
-                    conn.execute(text('ALTER TABLE "rating" ADD COLUMN nota_organizacao INTEGER'))
-                if 'nota_orientacao' not in rating_cols:
-                    conn.execute(text('ALTER TABLE "rating" ADD COLUMN nota_orientacao INTEGER'))
-                if 'nota_aprendizado' not in rating_cols:
-                    conn.execute(text('ALTER TABLE "rating" ADD COLUMN nota_aprendizado INTEGER'))
-                    
-                # Task: deadline, checklist, created_at, completed_at
-                task_cols = [c['name'] for c in inspector.get_columns('task')]
-                if 'deadline' not in task_cols:
-                    conn.execute(text('ALTER TABLE "task" ADD COLUMN deadline DATE'))
-                if 'checklist' not in task_cols:
-                    conn.execute(text('ALTER TABLE "task" ADD COLUMN checklist TEXT'))
-                if 'created_at' not in task_cols:
-                    if db.engine.name == 'postgresql':
-                        conn.execute(text('ALTER TABLE "task" ADD COLUMN created_at TIMESTAMP'))
-                    else:
-                        conn.execute(text('ALTER TABLE "task" ADD COLUMN created_at DATETIME'))
-                if 'completed_at' not in task_cols:
-                    if db.engine.name == 'postgresql':
-                        conn.execute(text('ALTER TABLE "task" ADD COLUMN completed_at TIMESTAMP'))
-                    else:
-                        conn.execute(text('ALTER TABLE "task" ADD COLUMN completed_at DATETIME'))
-                conn.commit()
-        except Exception as e:
-            print(f"Erro ao inicializar/migrar o banco de dados: {e}")
 
-        # Carga de dados iniciais se o DB estiver vazio
+                    proj_cols = [c['name'] for c in inspector.get_columns('project')]
+                    if 'professor_id' not in proj_cols:
+                        conn.execute(text('ALTER TABLE "project" ADD COLUMN professor_id INTEGER'))
+                    if 'tags' not in proj_cols:
+                        conn.execute(text('ALTER TABLE "project" ADD COLUMN tags VARCHAR(300)'))
+
+                    sub_cols = [c['name'] for c in inspector.get_columns('submission')]
+                    if 'tags' not in sub_cols:
+                        conn.execute(text('ALTER TABLE "submission" ADD COLUMN tags VARCHAR(300)'))
+
+                    rating_cols = [c['name'] for c in inspector.get_columns('rating')]
+                    if 'nota_organizacao' not in rating_cols:
+                        conn.execute(text('ALTER TABLE "rating" ADD COLUMN nota_organizacao INTEGER'))
+                    if 'nota_orientacao' not in rating_cols:
+                        conn.execute(text('ALTER TABLE "rating" ADD COLUMN nota_orientacao INTEGER'))
+                    if 'nota_aprendizado' not in rating_cols:
+                        conn.execute(text('ALTER TABLE "rating" ADD COLUMN nota_aprendizado INTEGER'))
+
+                    task_cols = [c['name'] for c in inspector.get_columns('task')]
+                    if 'deadline' not in task_cols:
+                        conn.execute(text('ALTER TABLE "task" ADD COLUMN deadline DATE'))
+                    if 'checklist' not in task_cols:
+                        conn.execute(text('ALTER TABLE "task" ADD COLUMN checklist TEXT'))
+                    if 'created_at' not in task_cols:
+                        conn.execute(text('ALTER TABLE "task" ADD COLUMN created_at DATETIME'))
+                    if 'completed_at' not in task_cols:
+                        conn.execute(text('ALTER TABLE "task" ADD COLUMN completed_at DATETIME'))
+                    conn.commit()
+
+            print("[DB MIGRATION] Migração do banco concluída com sucesso.")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[DB MIGRATION ERROR]: {e}")
+
+# Executa migração na inicialização local
+if os.environ.get('VERCEL') != '1':
+    run_db_migrations()
+    # Carga de dados iniciais locais se o DB estiver vazio
+    with app.app_context():
         try:
             if not User.query.first() and os.path.exists('users.json'):
                 with open('users.json', 'r', encoding='utf-8') as f:
@@ -152,6 +166,13 @@ if os.environ.get('VERCEL') != '1':
                 db.session.commit()
         except Exception as e:
             print(f"Erro ao carregar dados iniciais locais: {e}")
+
+# No Vercel (serverless), executa migrações de forma segura na primeira requisição recebida
+@app.before_request
+def ensure_db_migrated():
+    global _db_migrated
+    if not _db_migrated:
+        run_db_migrations()
 
 # =========================
 # Importar rotas modularizadas
