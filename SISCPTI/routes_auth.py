@@ -1,9 +1,10 @@
 from flask import request, session, jsonify, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
+import os
 import uuid
 
-from app_instance import app
+from app_instance import app, base_dir
 from models import db, User, PasswordReset, AccountVerification
 from utils import log_atividade, enviar_email, email_template_ativacao, email_template_recuperacao, get_frontend_url
 
@@ -84,8 +85,19 @@ def api_cadastro():
     # Em produção (Vercel), usa APP_URL. Localmente usa request.host_url.
     base_url = get_frontend_url() or request.host_url.rstrip('/')
     link = base_url + f"/verificar-conta/{token}"
-    corpo = email_template_ativacao(username, link)
-    enviado = enviar_email(email, 'Ative sua conta – SisCPTI', corpo)
+    img_path = os.path.join(base_dir, 'static', 'img', 'mail', 'authentication.png')
+    
+    if os.path.exists(img_path):
+        corpo = email_template_ativacao(username, link, img_src="cid:auth_illustration")
+        enviado = enviar_email(
+            email, 
+            'Ative sua conta – SisCPTI', 
+            corpo,
+            inline_images=[{'cid': 'auth_illustration', 'path': img_path}]
+        )
+    else:
+        corpo = email_template_ativacao(username, link, base_url=base_url)
+        enviado = enviar_email(email, 'Ative sua conta – SisCPTI', corpo)
 
     return jsonify({
         "status": "success", 
@@ -207,8 +219,19 @@ def api_recuperar_senha():
         
         base_url = get_frontend_url() or request.host_url.rstrip('/')
         link = base_url + f"/redefinir-senha/{token}"
-        corpo = email_template_recuperacao(user.username, link)
-        enviar_email(email, 'Recuperação de Senha – SisCPTI', corpo)
+        img_path = os.path.join(base_dir, 'static', 'img', 'mail', 'reset_password.png')
+        
+        if os.path.exists(img_path):
+            corpo = email_template_recuperacao(user.username, link, img_src="cid:reset_illustration")
+            enviar_email(
+                email, 
+                'Recuperação de Senha – SisCPTI', 
+                corpo,
+                inline_images=[{'cid': 'reset_illustration', 'path': img_path}]
+            )
+        else:
+            corpo = email_template_recuperacao(user.username, link, base_url=base_url)
+            enviar_email(email, 'Recuperação de Senha – SisCPTI', corpo)
         
     return jsonify({"status": "success", "message": "Se o e-mail existir, um link de recuperação foi enviado."})
 
