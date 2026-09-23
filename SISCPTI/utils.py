@@ -14,10 +14,11 @@ def get_frontend_url():
 
 
 def email_template_ativacao(username: str, link: str, base_url: str = None) -> str:
-    prod_url = "https://projeto-integardor-ii.vercel.app"
-    img_base = base_url.rstrip('/') if (base_url and not any(h in base_url for h in ['localhost', '127.0.0.1'])) else prod_url
-    logo_url = f"{img_base}/static/logoCEUB.png"
-    img_url = f"{img_base}/static/img/mail/authentication.png"
+    # CDN global de alta disponibilidade para imagens em e-mails institucionais
+    # Usa jsDelivr / GitHub Raw CDN para evitar bloqueio por 'no-cache' de proxies (Google Image Proxy) e cold starts de serverless
+    cdn_base = "https://cdn.jsdelivr.net/gh/GuilhermeGouveia12/Projeto-Integardor-III@main/SISCPTI"
+    logo_url = f"{cdn_base}/static/logoCEUB.png"
+    img_url = f"{cdn_base}/static/img/mail/authentication.png"
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -44,8 +45,9 @@ def email_template_ativacao(username: str, link: str, base_url: str = None) -> s
             <td align="left" valign="middle">
               <img src="{logo_url}"
                    alt="CEUB - Centro Universitário de Brasília"
+                   width="70"
                    height="42"
-                   style="height:42px;width:auto;display:block;border:0;" />
+                   style="height:42px;width:auto;max-height:42px;display:block;border:0;outline:none;" />
             </td>
             <td align="right" valign="middle">
               <div style="text-align:right;">
@@ -73,13 +75,14 @@ def email_template_ativacao(username: str, link: str, base_url: str = None) -> s
       </td>
     </tr>
 
-    <!-- Hero Illustration (Direct HTML Image from Vercel CDN - NOT an Attachment) -->
+    <!-- Hero Illustration (Direct HTML Image from Global CDN - NOT an Attachment) -->
     <tr>
       <td align="center" style="padding:32px 36px 12px;background:#ffffff;">
         <img src="{img_url}"
              alt="Autenticação de Conta"
-             width="230"
-             style="display:block;margin:0 auto;width:230px;max-width:100%;height:auto;border:0;outline:none;" />
+             width="220"
+             height="220"
+             style="display:block;margin:0 auto;width:220px;max-width:100%;height:auto;border:0;outline:none;" />
       </td>
     </tr>
 
@@ -176,10 +179,11 @@ def email_template_ativacao(username: str, link: str, base_url: str = None) -> s
 
 
 def email_template_recuperacao(username: str, link: str, base_url: str = None) -> str:
-    prod_url = "https://projeto-integardor-ii.vercel.app"
-    img_base = base_url.rstrip('/') if (base_url and not any(h in base_url for h in ['localhost', '127.0.0.1'])) else prod_url
-    logo_url = f"{img_base}/static/logoCEUB.png"
-    img_url = f"{img_base}/static/img/mail/reset_password.png"
+    # CDN global de alta disponibilidade para imagens em e-mails institucionais
+    # Usa jsDelivr / GitHub Raw CDN para evitar bloqueio por 'no-cache' de proxies (Google Image Proxy) e cold starts de serverless
+    cdn_base = "https://cdn.jsdelivr.net/gh/GuilhermeGouveia12/Projeto-Integardor-III@main/SISCPTI"
+    logo_url = f"{cdn_base}/static/logoCEUB.png"
+    img_url = f"{cdn_base}/static/img/mail/reset_password.png"
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -206,8 +210,9 @@ def email_template_recuperacao(username: str, link: str, base_url: str = None) -
             <td align="left" valign="middle">
               <img src="{logo_url}"
                    alt="CEUB - Centro Universitário de Brasília"
+                   width="70"
                    height="42"
-                   style="height:42px;width:auto;display:block;border:0;" />
+                   style="height:42px;width:auto;max-height:42px;display:block;border:0;outline:none;" />
             </td>
             <td align="right" valign="middle">
               <div style="text-align:right;">
@@ -235,13 +240,14 @@ def email_template_recuperacao(username: str, link: str, base_url: str = None) -
       </td>
     </tr>
 
-    <!-- Hero Illustration (Direct HTML Image from Vercel CDN - NOT an Attachment) -->
+    <!-- Hero Illustration (Direct HTML Image from Global CDN - NOT an Attachment) -->
     <tr>
       <td align="center" style="padding:32px 36px 12px;background:#ffffff;">
         <img src="{img_url}"
              alt="Redefinição de Senha"
-             width="230"
-             style="display:block;margin:0 auto;width:230px;max-width:100%;height:auto;border:0;outline:none;" />
+             width="220"
+             height="220"
+             style="display:block;margin:0 auto;width:220px;max-width:100%;height:auto;border:0;outline:none;" />
       </td>
     </tr>
 
