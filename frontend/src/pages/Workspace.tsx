@@ -1,19 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
-interface TaskItem {
+export interface SubtaskItem {
+  id?: string;
+  text: string;
+  done: boolean;
+}
+
+export interface TaskItem {
   id: number;
   titulo: string;
   descricao: string;
   status: 'todo' | 'doing' | 'done';
   assigned_username: string;
   deadline: string;
-  checklist?: string[];
+  checklist?: SubtaskItem[] | string[] | any;
+  created_at?: string;
+  completed_at?: string;
 }
 
-interface MessageItem {
+export interface MessageItem {
   id: number;
   username: string;
   texto: string;
@@ -25,30 +33,84 @@ export function Workspace() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<'Mensagens' | 'Kanban' | 'Métricas' | 'Participantes'>('Kanban');
+  // Abas de navegação
+  const [activeTab, setActiveTab] = useState<'Kanban' | 'Mensagens' | 'Métricas' | 'Participantes'>('Kanban');
+  
+  // Estado dos dados
   const [projeto, setProjeto] = useState<any>(null);
   const [membros, setMembros] = useState<string[]>([]);
   const [mensagens, setMensagens] = useState<MessageItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Painéis laterais responsivos (no mobile são gavetas off-canvas, no desktop painéis retráteis)
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+
+  // Filtros do Kanban
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMember, setFilterMember] = useState<string>('all');
+
+  // Drag and drop do Kanban
+  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  // Subtarefas expandidas por card (id da tarefa -> boolean)
+  const [expandedSubtasks, setExpandedSubtasks] = useState<Record<number, boolean>>({});
 
   // Chat input
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  // Modal nova tarefa
+  // Modal: Nova Tarefa
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [taskTitulo, setTaskTitulo] = useState('');
   const [taskDescricao, setTaskDescricao] = useState('');
   const [taskAssigned, setTaskAssigned] = useState('');
   const [taskDeadline, setTaskDeadline] = useState('');
+  const [newSubtasks, setNewSubtasks] = useState<string[]>([]);
+  const [tempSubtaskInput, setTempSubtaskInput] = useState('');
   const [creatingTask, setCreatingTask] = useState(false);
 
-  // Carregar dados do workspace
+  // Modal: Detalhes / Edição de Tarefa
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
+  const [editTitulo, setEditTitulo] = useState('');
+  const [editDescricao, setEditDescricao] = useState('');
+  const [editAssigned, setEditAssigned] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editSubtasks, setEditSubtasks] = useState<SubtaskItem[]>([]);
+  const [editNewSubtaskText, setEditNewSubtaskText] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Utilitário para normalizar checklist em array de SubtaskItem
+  const normalizeSubtasks = (checklist: any): SubtaskItem[] => {
+    if (!checklist) return [];
+    if (typeof checklist === 'string') {
+      try {
+        checklist = JSON.parse(checklist);
+      } catch (e) {
+        return [];
+      }
+    }
+    if (!Array.isArray(checklist)) return [];
+    return checklist.map((item, idx) => {
+      if (typeof item === 'string') {
+        return { id: `st-${idx}`, text: item, done: false };
+      }
+      if (item && typeof item === 'object') {
+        return {
+          id: item.id || `st-${idx}`,
+          text: item.text || item.titulo || '',
+          done: Boolean(item.done || item.concluida)
+        };
+      }
+      return { id: `st-${idx}`, text: String(item), done: false };
+    });
+  };
+
+  // Carregar dados iniciais do workspace
   const carregarWorkspace = async () => {
     try {
       setError('');
@@ -105,7 +167,7 @@ export function Workspace() {
     }
   }, [mensagens, activeTab]);
 
-  // Enviar mensagem
+  // Enviar mensagem no chat
   const handleEnviarMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!texto.trim() || enviando) return;
@@ -134,39 +196,80 @@ export function Workspace() {
     }
   };
 
-  // Mover status de tarefa
+  // Mover status da tarefa (drag or click)
   const handleMoverTask = async (taskId: number, novoStatus: 'todo' | 'doing' | 'done') => {
+    // Atualização otimista
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: novoStatus } : t));
     try {
       await api.post(`/projeto/${id}/tasks/${taskId}/mover`, { status: novoStatus });
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: novoStatus } : t));
     } catch (err: any) {
       alert(err.response?.data?.error || 'Erro ao mover tarefa.');
+      carregarTasks(); // reverte se falhar
+    }
+  };
+
+  // Alternar checkbox de subtarefa direto no card
+  const handleToggleSubtaskOnCard = async (task: TaskItem, subtaskIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentList = normalizeSubtasks(task.checklist);
+    const updated = currentList.map((st, i) => i === subtaskIndex ? { ...st, done: !st.done } : st);
+
+    // Atualização otimista local
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist: updated } : t));
+
+    try {
+      await api.post(`/projeto/${id}/tasks/${task.id}/editar`, {
+        checklist: updated
+      });
+    } catch (err: any) {
+      console.error('Erro ao atualizar subtarefa:', err);
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist: currentList } : t));
     }
   };
 
   // Excluir tarefa
-  const handleExcluirTask = async (taskId: number) => {
-    if (!window.confirm('Deseja excluir esta tarefa do quadro Kanban?')) return;
+  const handleExcluirTask = async (taskId: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Tem certeza que deseja excluir esta tarefa do projeto?')) return;
     try {
       await api.post(`/projeto/${id}/tasks/${taskId}/excluir`);
       setTasks(prev => prev.filter(t => t.id !== taskId));
+      if (editingTask?.id === taskId) {
+        setEditingTask(null);
+      }
     } catch (err: any) {
       alert(err.response?.data?.error || 'Erro ao excluir tarefa.');
     }
   };
 
-  // Criar tarefa
+  // Adicionar subtarefa na lista temporária do modal de criação
+  const handleAddTempSubtask = (e: React.KeyboardEvent | React.MouseEvent) => {
+    if ('key' in e && e.key !== 'Enter') return;
+    if ('preventDefault' in e) e.preventDefault();
+    if (!tempSubtaskInput.trim()) return;
+
+    setNewSubtasks(prev => [...prev, tempSubtaskInput.trim()]);
+    setTempSubtaskInput('');
+  };
+
+  const handleRemoveTempSubtask = (index: number) => {
+    setNewSubtasks(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Criar nova tarefa
   const handleCriarTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskTitulo.trim()) return;
 
     setCreatingTask(true);
     try {
+      const checklistPayload = newSubtasks.map(text => ({ text, done: false }));
       const res = await api.post(`/projeto/${id}/tasks/criar`, {
         titulo: taskTitulo,
         descricao: taskDescricao,
         assigned_username: taskAssigned,
-        deadline: taskDeadline
+        deadline: taskDeadline,
+        checklist: checklistPayload
       });
       if (res.data.status === 'success' && res.data.task) {
         setTasks(prev => [...prev, res.data.task]);
@@ -175,6 +278,8 @@ export function Workspace() {
         setTaskDescricao('');
         setTaskAssigned('');
         setTaskDeadline('');
+        setNewSubtasks([]);
+        setTempSubtaskInput('');
       } else {
         alert(res.data.error || 'Erro ao registrar tarefa.');
       }
@@ -185,12 +290,74 @@ export function Workspace() {
     }
   };
 
+  // Abrir modal de edição/detalhes
+  const handleOpenEditTask = (task: TaskItem) => {
+    setEditingTask(task);
+    setEditTitulo(task.titulo);
+    setEditDescricao(task.descricao || '');
+    setEditAssigned(task.assigned_username || '');
+    setEditDeadline(task.deadline || '');
+    setEditSubtasks(normalizeSubtasks(task.checklist));
+    setEditNewSubtaskText('');
+  };
+
+  // Adicionar subtarefa no modal de edição
+  const handleAddEditSubtask = (e: React.KeyboardEvent | React.MouseEvent) => {
+    if ('key' in e && e.key !== 'Enter') return;
+    if ('preventDefault' in e) e.preventDefault();
+    if (!editNewSubtaskText.trim()) return;
+
+    setEditSubtasks(prev => [...prev, { text: editNewSubtaskText.trim(), done: false }]);
+    setEditNewSubtaskText('');
+  };
+
+  const handleToggleEditSubtask = (index: number) => {
+    setEditSubtasks(prev => prev.map((st, i) => i === index ? { ...st, done: !st.done } : st));
+  };
+
+  const handleRemoveEditSubtask = (index: number) => {
+    setEditSubtasks(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Salvar alterações da tarefa
+  const handleSalvarEdicaoTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !editTitulo.trim()) return;
+
+    setSavingEdit(true);
+    try {
+      const res = await api.post(`/projeto/${id}/tasks/${editingTask.id}/editar`, {
+        titulo: editTitulo,
+        descricao: editDescricao,
+        assigned_username: editAssigned,
+        deadline: editDeadline,
+        checklist: editSubtasks
+      });
+      if (res.data.status === 'success' && res.data.task) {
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? res.data.task : t));
+        setEditingTask(null);
+      } else {
+        alert(res.data.error || 'Erro ao salvar alterações.');
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Erro ao atualizar tarefa.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Alternar visualização de subtarefas em um card
+  const toggleSubtasksExpand = (taskId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedSubtasks(prev => ({ ...prev, [taskId]: !prev[taskId] }));
+  };
+
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-[calc(100vh-64px)] bg-bg-primary">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-11 w-11 border-2 border-purple-primary border-t-transparent mx-auto mb-3"></div>
-          <p className="text-xs font-semibold text-text-secondary">Conectando ao Workspace institucional...</p>
+      <div className="flex justify-center items-center h-screen w-screen bg-slate-50">
+        <div className="text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+          <div className="animate-spin rounded-full h-10 w-10 border-3 border-[#002B49] border-t-transparent mx-auto mb-3"></div>
+          <p className="text-xs font-semibold text-slate-700">Conectando ao Workspace institucional...</p>
         </div>
       </div>
     );
@@ -198,23 +365,31 @@ export function Workspace() {
 
   if (error || !projeto) {
     return (
-      <div className="flex flex-col justify-center items-center h-[calc(100vh-64px)] p-6 bg-bg-primary text-center">
-        <div className="bg-bg-surface p-8 rounded-2xl shadow-sm max-w-md border border-border-color space-y-4">
-          <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto">
+      <div className="flex flex-col justify-center items-center h-screen w-screen p-6 bg-slate-50 text-center">
+        <div className="bg-white p-8 rounded-2xl shadow-sm max-w-md border border-slate-200 space-y-4">
+          <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h3 className="text-lg font-bold font-title text-text-primary">Acesso Restrito ao Projeto</h3>
-          <p className="text-text-secondary text-xs leading-relaxed">
+          <h3 className="text-lg font-bold text-[#002B49]">Acesso Restrito ao Projeto</h3>
+          <p className="text-slate-600 text-xs leading-relaxed">
             {error || 'Você precisa ser integrante aprovado, orientador ou administrador para visualizar esta área de trabalho.'}
           </p>
-          <Link 
-            to="/perfil" 
-            className="inline-block bg-purple-primary text-white font-bold px-6 py-2 rounded-xl text-xs no-underline hover:bg-purple-hover transition-colors shadow-sm"
-          >
-            Retornar ao Meu Perfil
-          </Link>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <Link 
+              to="/projetos" 
+              className="bg-slate-100 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs hover:bg-slate-200 transition-colors"
+            >
+              Catálogo de Projetos
+            </Link>
+            <Link 
+              to="/perfil" 
+              className="bg-[#002B49] text-white font-bold px-5 py-2 rounded-xl text-xs hover:bg-[#003B64] transition-colors shadow-xs"
+            >
+              Meu Perfil
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -222,651 +397,759 @@ export function Workspace() {
 
   const isOwnerOrAdmin = (projeto.owner_username === user?.username) || (user?.role === 'admin') || (user?.role === 'lider');
 
-  const todoTasks = tasks.filter(t => t.status === 'todo');
-  const doingTasks = tasks.filter(t => t.status === 'doing');
-  const doneTasks = tasks.filter(t => t.status === 'done');
+  // Filtragem das tarefas
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch = searchQuery.trim() === '' || 
+      task.titulo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.descricao && task.descricao.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    let matchesMember = true;
+    if (filterMember === 'mine') {
+      matchesMember = task.assigned_username === user?.username;
+    } else if (filterMember !== 'all') {
+      matchesMember = task.assigned_username === filterMember;
+    }
+
+    return matchesSearch && matchesMember;
+  });
+
+  const todoTasks = filteredTasks.filter(t => t.status === 'todo');
+  const doingTasks = filteredTasks.filter(t => t.status === 'doing');
+  const doneTasks = filteredTasks.filter(t => t.status === 'done');
+  
   const totalTasks = tasks.length;
-  const percentComplete = totalTasks > 0 ? Math.round((doneTasks.length / totalTasks) * 100) : 0;
+  const doneTasksTotal = tasks.filter(t => t.status === 'done').length;
+  const percentComplete = totalTasks > 0 ? Math.round((doneTasksTotal / totalTasks) * 100) : 0;
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-bg-primary">
+    <div className="h-screen w-screen flex flex-col bg-slate-50 text-slate-800 overflow-hidden font-sans select-none">
       
-      {/* BARRA LATERAL ESQUERDA: EQUIPE DO PROJETO */}
-      <aside className={`w-[270px] bg-bg-surface border-r border-border-color flex flex-col shrink-0 transition-all duration-300 z-10 ${leftOpen ? 'ml-0' : '-ml-[270px]'}`}>
-        <div className="p-4 border-b border-border-color">
+      {/* ======================================================== */}
+      {/* 1. BARRA SUPERIOR DO WORKSPACE (SUBSTITUI NAVBAR GLOBAL) */}
+      {/* ======================================================== */}
+      <header className="h-14 sm:h-16 bg-white border-b border-slate-200 px-3 sm:px-5 flex items-center justify-between gap-3 shrink-0 z-30 shadow-xs">
+        
+        {/* Esquerda: Sair do Workspace + Projeto Info */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link 
-            to="/perfil" 
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-primary hover:underline mb-4"
+            to={`/projeto/${id}`} 
+            title="Voltar aos Detalhes do Projeto"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#002B49] bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1.5 rounded-xl transition-colors shrink-0"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            <span>Voltar ao Perfil</span>
+            <span className="hidden sm:inline">Sair do Workspace</span>
           </Link>
 
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-primary/10 text-purple-primary flex items-center justify-center font-bold text-sm border border-purple-primary/20 shrink-0">
-              {(user?.username || 'U').substring(0, 2).toUpperCase()}
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className="font-bold text-xs text-text-primary truncate">{user?.username || 'Usuário'}</span>
-              <span className="text-[0.65rem] text-text-secondary uppercase tracking-wider font-semibold">{user?.role || 'Membro'}</span>
-            </div>
-          </div>
-        </div>
-        
-        {/* LISTA DE INTEGRANTES */}
-        <div className="p-4 flex flex-col gap-2 overflow-y-auto grow">
-          <div className="flex items-center justify-between text-[0.7rem] text-text-secondary font-bold uppercase tracking-wider mb-2">
-            <span>Equipe Acadêmica</span>
-            <span className="px-2 py-0.5 rounded-full bg-purple-primary/10 text-purple-primary font-bold">
-              {membros.length + 1 + (projeto.orientador ? 1 : 0)}
+          <div className="h-5 w-px bg-slate-200 hidden sm:block shrink-0"></div>
+
+          {/* Botão de Toggle da Equipe (Lateral Esquerda) */}
+          <button 
+            onClick={() => setLeftOpen(!leftOpen)}
+            title="Alternar painel da Equipe"
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+              leftOpen 
+                ? 'bg-blue-50 border-blue-200 text-[#002B49]' 
+                : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <span className="hidden md:inline font-bold">Equipe ({membros.length + 1})</span>
+          </button>
+
+          {/* Título do Projeto e badges */}
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-xs sm:text-sm font-bold text-[#002B49] truncate m-0 max-w-[150px] sm:max-w-[280px] md:max-w-[360px]" title={projeto.titulo}>
+              {projeto.titulo}
+            </h1>
+            <span className="hidden lg:inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wide">
+              {projeto.categoria}
             </span>
           </div>
-          
-          {/* Dono / Líder */}
-          <div className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-bg-primary transition-colors border border-transparent hover:border-border-color">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold bg-purple-primary shrink-0 shadow-sm">
-              {(projeto.owner_username || 'D').substring(0, 2).toUpperCase()}
+        </div>
+
+        {/* Centro: Alternador de Abas */}
+        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 shrink-0">
+          <button
+            onClick={() => setActiveTab('Kanban')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Kanban' 
+                ? 'bg-[#002B49] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900 bg-transparent'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+            </svg>
+            <span>Kanban</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'Kanban' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              {tasks.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('Mensagens')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Mensagens' 
+                ? 'bg-[#002B49] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900 bg-transparent'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span className="hidden sm:inline">Mensagens</span>
+            {mensagens.length > 0 && (
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'Mensagens' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                {mensagens.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('Métricas')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Métricas' 
+                ? 'bg-[#002B49] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900 bg-transparent'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="hidden md:inline">Métricas</span>
+            <span className={`text-[10px] font-bold ${activeTab === 'Métricas' ? 'text-white' : 'text-emerald-700'}`}>
+              {percentComplete}%
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('Participantes')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Participantes' 
+                ? 'bg-[#002B49] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900 bg-transparent'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <span className="hidden lg:inline">Equipe</span>
+          </button>
+        </div>
+
+        {/* Direita: Ações Rápidas (Nova Tarefa + Toggle Resumo) */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button 
+            onClick={() => setShowNewTaskModal(true)}
+            className="flex items-center gap-1.5 bg-[#002B49] text-white hover:bg-[#003B64] px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            title="Criar nova tarefa no Kanban"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.4} d="M12 4v16m8-8H4" />
+            </svg>
+            <span className="hidden sm:inline">Nova Tarefa</span>
+          </button>
+
+          <button 
+            onClick={() => setRightOpen(!rightOpen)}
+            title="Alternar resumo institucional"
+            className={`p-2 rounded-xl border cursor-pointer transition-colors ${
+              rightOpen 
+                ? 'bg-blue-50 border-blue-200 text-[#002B49]' 
+                : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      {/* ======================================================== */}
+      {/* 2. ÁREA PRINCIPAL COM CORPO E SIDEBARS RESPONSIVAS */}
+      {/* ======================================================== */}
+      <div className="flex-1 flex overflow-hidden relative">
+        
+        {/* BACKDROP OVERLAY PARA MOBILE QUANDO ALGUMA GAVETA ESTIVER ABERTA */}
+        {(leftOpen || rightOpen) && (
+          <div 
+            onClick={() => { setLeftOpen(false); setRightOpen(false); }}
+            className="lg:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 transition-opacity"
+          />
+        )}
+
+        {/* GAVETA / PAINEL LATERAL ESQUERDO: EQUIPE DO PROJETO */}
+        <aside className={`
+          fixed lg:static inset-y-0 left-0 z-40 lg:z-10
+          w-72 sm:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0
+          transition-transform lg:transition-all duration-300 ease-in-out shadow-lg lg:shadow-none
+          ${leftOpen ? 'translate-x-0 lg:ml-0' : '-translate-x-full lg:-ml-72 sm:lg:-ml-80'}
+        `}>
+          {/* Header da Sidebar */}
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">Área Acadêmica</span>
+              <h3 className="text-xs font-bold text-[#002B49] m-0">Equipe & Orientação</h3>
             </div>
-            <div className="flex flex-col min-w-0">
-              <span className="font-semibold text-xs text-text-primary truncate">{projeto.owner_username}</span>
-              <span className="text-[0.65rem] text-purple-primary font-medium">Líder do Projeto</span>
+            <button 
+              onClick={() => setLeftOpen(false)}
+              className="lg:hidden text-slate-600 hover:text-slate-800 p-1"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Usuário Atual */}
+          <div className="p-3 m-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#002B49] text-white flex items-center justify-center text-xs font-bold shrink-0">
+              {(user?.username || 'U').substring(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-xs font-bold text-slate-800 truncate block">{user?.username}</span>
+              <span className="text-[10px] text-slate-600 uppercase font-semibold">{user?.role || 'Membro'}</span>
             </div>
           </div>
 
-          {/* Professor Orientador */}
-          {projeto.orientador && (
-            <div className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-bg-primary transition-colors border border-transparent hover:border-border-color">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold bg-blue-600 shrink-0 shadow-sm">
-                {projeto.orientador.username.substring(0, 2).toUpperCase()}
+          {/* Lista de Membros com Ação de Filtrar Tarefas */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-1">
+            <div className="flex items-center justify-between px-2 mb-2">
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Filtrar por Integrante</span>
+              {filterMember !== 'all' && (
+                <button 
+                  onClick={() => setFilterMember('all')}
+                  className="text-[10px] text-blue-600 font-bold hover:underline"
+                >
+                  Ver Todos
+                </button>
+              )}
+            </div>
+
+            {/* Líder / Dono */}
+            <button
+              onClick={() => setFilterMember(filterMember === projeto.owner_username ? 'all' : projeto.owner_username)}
+              className={`w-full text-left p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors cursor-pointer ${
+                filterMember === projeto.owner_username 
+                  ? 'bg-blue-50/80 border-blue-300 shadow-xs' 
+                  : 'bg-white border-slate-100 hover:bg-slate-50'
+              }`}
+            >
+              <div className="w-7 h-7 rounded-lg bg-[#002B49] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                {(projeto.owner_username || 'L').substring(0, 2).toUpperCase()}
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-semibold text-xs text-text-primary truncate">{projeto.orientador.username}</span>
-                <span className="text-[0.65rem] text-blue-600 dark:text-blue-400 font-medium">Professor Orientador</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-semibold text-slate-800 truncate block">{projeto.owner_username}</span>
+                <span className="text-[10px] text-blue-700 font-bold">Líder do Projeto</span>
+              </div>
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-bold">
+                {tasks.filter(t => t.assigned_username === projeto.owner_username).length}
+              </span>
+            </button>
+
+            {/* Orientador */}
+            {projeto.orientador && (
+              <button
+                onClick={() => setFilterMember(filterMember === projeto.orientador.username ? 'all' : projeto.orientador.username)}
+                className={`w-full text-left p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors cursor-pointer ${
+                  filterMember === projeto.orientador.username 
+                    ? 'bg-blue-50/80 border-blue-300 shadow-xs' 
+                    : 'bg-white border-slate-100 hover:bg-slate-50'
+                }`}
+              >
+                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                  {projeto.orientador.username.substring(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-semibold text-slate-800 truncate block">{projeto.orientador.username}</span>
+                  <span className="text-[10px] text-blue-600 font-bold">Professor Orientador</span>
+                </div>
+              </button>
+            )}
+
+            {/* Membros Alunos */}
+            {membros.map((m, idx) => (
+              <button
+                key={idx}
+                onClick={() => setFilterMember(filterMember === m ? 'all' : m)}
+                className={`w-full text-left p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors cursor-pointer ${
+                  filterMember === m 
+                    ? 'bg-blue-50/80 border-blue-300 shadow-xs' 
+                    : 'bg-white border-slate-100 hover:bg-slate-50'
+                }`}
+              >
+                <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                  {m.substring(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-semibold text-slate-800 truncate block">{m}</span>
+                  <span className="text-[10px] text-slate-600">Pesquisador</span>
+                </div>
+                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-bold">
+                  {tasks.filter(t => t.assigned_username === m).length}
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        {/* ======================================================== */}
+        {/* CORPO CENTRAL DO WORKSPACE */}
+        {/* ======================================================== */}
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+          
+          {/* ==================== ABA: KANBAN COM SUBTAREFAS ==================== */}
+          {activeTab === 'Kanban' && (
+            <div className="flex-1 flex flex-col p-3 sm:p-5 overflow-hidden">
+              
+              {/* Toolbar do Kanban: Busca, Filtro e Status */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 shrink-0 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+                
+                {/* Campo de Busca de Tarefas */}
+                <div className="relative flex-1 max-w-md">
+                  <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input 
+                    type="text"
+                    placeholder="Buscar tarefas por título ou descrição..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white transition-all"
+                  />
+                  {searchQuery && (
+                    <button 
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-800 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtro por Responsável + Botão Nova Tarefa */}
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={filterMember}
+                    onChange={(e) => setFilterMember(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-[#002B49] cursor-pointer"
+                  >
+                    <option value="all">Todos os Responsáveis</option>
+                    {user?.username && <option value="mine">Minhas Tarefas ({user.username})</option>}
+                    <option value={projeto.owner_username}>{projeto.owner_username} (Líder)</option>
+                    {membros.map((m, i) => (
+                      <option key={i} value={m}>{m}</option>
+                    ))}
+                  </select>
+
+                  <button 
+                    onClick={() => setShowNewTaskModal(true)}
+                    className="flex items-center gap-1.5 bg-[#002B49] text-white hover:bg-[#003B64] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs shrink-0"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.4} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Adicionar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* COLUNAS DO QUADRO KANBAN (ROLAGEM HORIZONTAL SUAVE) */}
+              <div className="flex-1 flex gap-4 sm:gap-5 overflow-x-auto pb-2 items-start snap-x">
+                
+                {/* ----------------- COLUNA: A FAZER ----------------- */}
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setDragOverColumn('todo'); }}
+                  onDragLeave={() => setDragOverColumn(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverColumn(null);
+                    if (draggedTaskId) handleMoverTask(draggedTaskId, 'todo');
+                  }}
+                  className={`
+                    w-[320px] sm:w-[350px] md:w-[370px] shrink-0 h-full max-h-full
+                    bg-slate-100/90 rounded-2xl border flex flex-col shadow-xs transition-colors snap-center
+                    ${dragOverColumn === 'todo' ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200/90'}
+                  `}
+                >
+                  {/* Cabeçalho da Coluna */}
+                  <div className="p-3.5 border-b border-slate-200/80 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">A Fazer</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                        {todoTasks.length}
+                      </span>
+                      <button 
+                        onClick={() => setShowNewTaskModal(true)}
+                        title="Adicionar tarefa nesta coluna"
+                        className="w-6 h-6 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de Cards da Coluna */}
+                  <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
+                    {todoTasks.length === 0 ? (
+                      <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl my-4">
+                        <p className="text-xs text-slate-600 m-0">Nenhuma tarefa pendente nesta etapa.</p>
+                      </div>
+                    ) : (
+                      todoTasks.map(task => renderTaskCard(task, 'todo'))
+                    )}
+                  </div>
+                </div>
+
+                {/* ----------------- COLUNA: EM ANDAMENTO ----------------- */}
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setDragOverColumn('doing'); }}
+                  onDragLeave={() => setDragOverColumn(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverColumn(null);
+                    if (draggedTaskId) handleMoverTask(draggedTaskId, 'doing');
+                  }}
+                  className={`
+                    w-[320px] sm:w-[350px] md:w-[370px] shrink-0 h-full max-h-full
+                    bg-slate-100/90 rounded-2xl border flex flex-col shadow-xs transition-colors snap-center
+                    ${dragOverColumn === 'doing' ? 'border-blue-400 bg-blue-50/30' : 'border-slate-200/90'}
+                  `}
+                >
+                  <div className="p-3.5 border-b border-slate-200/80 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></div>
+                      <span className="text-xs font-bold text-[#002B49] uppercase tracking-wider">Em Andamento</span>
+                    </div>
+                    <span className="bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                      {doingTasks.length}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
+                    {doingTasks.length === 0 ? (
+                      <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl my-4">
+                        <p className="text-xs text-slate-600 m-0">Nenhuma atividade em andamento no momento.</p>
+                      </div>
+                    ) : (
+                      doingTasks.map(task => renderTaskCard(task, 'doing'))
+                    )}
+                  </div>
+                </div>
+
+                {/* ----------------- COLUNA: CONCLUÍDO ----------------- */}
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setDragOverColumn('done'); }}
+                  onDragLeave={() => setDragOverColumn(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverColumn(null);
+                    if (draggedTaskId) handleMoverTask(draggedTaskId, 'done');
+                  }}
+                  className={`
+                    w-[320px] sm:w-[350px] md:w-[370px] shrink-0 h-full max-h-full
+                    bg-slate-100/90 rounded-2xl border flex flex-col shadow-xs transition-colors snap-center
+                    ${dragOverColumn === 'done' ? 'border-emerald-400 bg-emerald-50/30' : 'border-slate-200/90'}
+                  `}
+                >
+                  <div className="p-3.5 border-b border-slate-200/80 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-600"></div>
+                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Concluído</span>
+                    </div>
+                    <span className="bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                      {doneTasks.length}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
+                    {doneTasks.length === 0 ? (
+                      <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl my-4">
+                        <p className="text-xs text-slate-600 m-0">Nenhuma tarefa finalizada até o momento.</p>
+                      </div>
+                    ) : (
+                      doneTasks.map(task => renderTaskCard(task, 'done'))
+                    )}
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
 
-          {/* Membros Alunos */}
-          {membros.map((m, i) => (
-            <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-bg-primary transition-colors border border-transparent hover:border-border-color">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold bg-emerald-600 shrink-0 shadow-sm">
-                {m.substring(0, 2).toUpperCase()}
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-semibold text-xs text-text-primary truncate">{m}</span>
-                <span className="text-[0.65rem] text-text-secondary font-medium">Pesquisador / Integrante</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      {/* ÁREA CENTRAL */}
-      <section className="flex-1 flex flex-col min-w-0 bg-bg-primary overflow-hidden">
-        
-        {/* BARRA SUPERIOR DO WORKSPACE */}
-        <div className="h-16 bg-bg-surface border-b border-border-color flex items-center justify-between px-4 sm:px-6 shrink-0 gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <button 
-              onClick={() => setLeftOpen(!leftOpen)} 
-              title="Alternar painel de equipe"
-              className="w-8 h-8 rounded-lg border border-border-color flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-primary transition-colors cursor-pointer"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div className="flex flex-col min-w-0">
-              <h1 className="m-0 font-title text-sm sm:text-base font-bold text-text-primary truncate">
-                {projeto.titulo}
-              </h1>
-              <div className="flex items-center gap-2 text-[0.7rem] text-text-secondary">
-                <span className="px-1.5 py-0.2 rounded bg-bg-primary font-medium text-text-secondary border border-border-color">
-                  {projeto.categoria}
-                </span>
-                <span>•</span>
-                <span>{percentComplete}% concluído</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Abas e botão do resumo lateral */}
-          <div className="flex items-center gap-2">
-            <div className="bg-bg-primary p-1 rounded-xl border border-border-color flex gap-1">
-              {(['Kanban', 'Mensagens', 'Métricas', 'Participantes'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`border-none px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
-                    activeTab === tab 
-                      ? 'bg-purple-primary text-white shadow-sm' 
-                      : 'bg-transparent text-text-secondary hover:text-text-primary'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            <button 
-              onClick={() => setRightOpen(!rightOpen)} 
-              title="Alternar resumo do projeto"
-              className="w-8 h-8 rounded-lg border border-border-color flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-primary transition-colors cursor-pointer"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* ABA: KANBAN DE TAREFAS */}
-        {activeTab === 'Kanban' && (
-          <div className="flex-1 p-5 sm:p-6 overflow-y-auto bg-bg-primary flex flex-col">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-              <div>
-                <h2 className="font-title text-lg font-bold text-text-primary m-0">Quadro de Entregas e Tarefas</h2>
-                <p className="text-xs text-text-secondary m-0 mt-0.5">Gestão de atividades ágeis e prazos de execução do projeto.</p>
-              </div>
-
-              {isOwnerOrAdmin && (
-                <button 
-                  onClick={() => setShowNewTaskModal(true)}
-                  className="inline-flex items-center gap-2 bg-purple-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-purple-hover transition-colors shadow-sm self-start sm:self-auto cursor-pointer"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Nova Tarefa</span>
-                </button>
-              )}
-            </div>
-
-            {/* COLUNAS KANBAN */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 flex-1 min-h-[460px]">
-              
-              {/* COLUNA: A FAZER */}
-              <div className="bg-bg-surface border border-border-color rounded-2xl p-4 flex flex-col shadow-sm">
-                <div className="flex justify-between items-center mb-4 pb-3 border-b border-border-color">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
-                    <span className="font-title font-bold text-xs text-text-primary tracking-wide uppercase">A Fazer</span>
-                  </div>
-                  <span className="bg-bg-primary border border-border-color text-text-secondary text-[0.7rem] px-2.5 py-0.5 rounded-full font-bold">
-                    {todoTasks.length}
-                  </span>
-                </div>
-
-                <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-1">
-                  {todoTasks.length === 0 ? (
-                    <div className="text-[0.75rem] text-text-secondary italic text-center py-12">Nenhuma tarefa pendente nesta etapa.</div>
-                  ) : (
-                    todoTasks.map(task => (
-                      <div key={task.id} className="bg-bg-primary border border-border-color rounded-xl p-3.5 shadow-sm hover:border-purple-primary/40 transition-colors">
-                        <div className="flex justify-between items-start gap-2 mb-1.5">
-                          <h4 className="m-0 font-bold text-xs text-text-primary leading-snug">{task.titulo}</h4>
-                          {isOwnerOrAdmin && (
-                            <button 
-                              onClick={() => handleExcluirTask(task.id)} 
-                              title="Excluir tarefa"
-                              className="text-text-secondary hover:text-rose-600 text-xs bg-transparent border-none cursor-pointer p-0.5"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                        {task.descricao && (
-                          <p className="text-[0.75rem] text-text-secondary m-0 mb-3 leading-relaxed line-clamp-3">{task.descricao}</p>
-                        )}
-                        <div className="flex justify-between items-center text-[0.7rem] text-text-secondary pt-2 border-t border-border-color">
-                          <span className="inline-flex items-center gap-1 font-medium">
-                            <span className="w-4 h-4 rounded-full bg-purple-primary/10 text-purple-primary flex items-center justify-center text-[0.6rem] font-bold">
-                              {(task.assigned_username || 'N').substring(0, 1).toUpperCase()}
-                            </span>
-                            {task.assigned_username || 'Geral'}
-                          </span>
-                          {task.deadline && (
-                            <span className="inline-flex items-center gap-1 text-[0.65rem] text-amber-600 dark:text-amber-400 font-semibold">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                              {task.deadline}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2.5 pt-2 border-t border-border-color flex justify-end">
-                          <button 
-                            onClick={() => handleMoverTask(task.id, 'doing')}
-                            className="inline-flex items-center gap-1 bg-purple-primary text-white px-2.5 py-1 rounded-lg text-[0.7rem] font-semibold cursor-pointer hover:bg-purple-hover transition-colors shadow-sm"
-                          >
-                            <span>Iniciar Atividade</span>
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* COLUNA: EM DESENVOLVIMENTO */}
-              <div className="bg-bg-surface border border-border-color rounded-2xl p-4 flex flex-col shadow-sm">
-                <div className="flex justify-between items-center mb-4 pb-3 border-b border-border-color">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600"></div>
-                    <span className="font-title font-bold text-xs text-text-primary tracking-wide uppercase">Em Andamento</span>
-                  </div>
-                  <span className="bg-bg-primary border border-border-color text-text-secondary text-[0.7rem] px-2.5 py-0.5 rounded-full font-bold">
-                    {doingTasks.length}
-                  </span>
-                </div>
-
-                <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-1">
-                  {doingTasks.length === 0 ? (
-                    <div className="text-[0.75rem] text-text-secondary italic text-center py-12">Nenhuma tarefa em execução.</div>
-                  ) : (
-                    doingTasks.map(task => (
-                      <div key={task.id} className="bg-bg-primary border border-border-color rounded-xl p-3.5 shadow-sm hover:border-purple-primary/40 transition-colors">
-                        <div className="flex justify-between items-start gap-2 mb-1.5">
-                          <h4 className="m-0 font-bold text-xs text-text-primary leading-snug">{task.titulo}</h4>
-                          {isOwnerOrAdmin && (
-                            <button 
-                              onClick={() => handleExcluirTask(task.id)} 
-                              title="Excluir tarefa"
-                              className="text-text-secondary hover:text-rose-600 text-xs bg-transparent border-none cursor-pointer p-0.5"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                        {task.descricao && (
-                          <p className="text-[0.75rem] text-text-secondary m-0 mb-3 leading-relaxed line-clamp-3">{task.descricao}</p>
-                        )}
-                        <div className="flex justify-between items-center text-[0.7rem] text-text-secondary pt-2 border-t border-border-color">
-                          <span className="inline-flex items-center gap-1 font-medium">
-                            <span className="w-4 h-4 rounded-full bg-purple-primary/10 text-purple-primary flex items-center justify-center text-[0.6rem] font-bold">
-                              {(task.assigned_username || 'N').substring(0, 1).toUpperCase()}
-                            </span>
-                            {task.assigned_username || 'Geral'}
-                          </span>
-                          {task.deadline && (
-                            <span className="inline-flex items-center gap-1 text-[0.65rem] text-blue-600 dark:text-blue-400 font-semibold">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                              {task.deadline}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2.5 pt-2 border-t border-border-color flex justify-between items-center">
-                          <button 
-                            onClick={() => handleMoverTask(task.id, 'todo')}
-                            className="text-text-secondary hover:text-text-primary text-[0.7rem] font-medium bg-transparent border-none cursor-pointer"
-                          >
-                            ← Recuar
-                          </button>
-                          <button 
-                            onClick={() => handleMoverTask(task.id, 'done')}
-                            className="inline-flex items-center gap-1 bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-[0.7rem] font-semibold cursor-pointer hover:bg-emerald-700 transition-colors shadow-sm"
-                          >
-                            <span>Concluir</span>
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* COLUNA: CONCLUÍDO */}
-              <div className="bg-bg-surface border border-border-color rounded-2xl p-4 flex flex-col shadow-sm">
-                <div className="flex justify-between items-center mb-4 pb-3 border-b border-border-color">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-600"></div>
-                    <span className="font-title font-bold text-xs text-text-primary tracking-wide uppercase">Concluído</span>
-                  </div>
-                  <span className="bg-bg-primary border border-border-color text-text-secondary text-[0.7rem] px-2.5 py-0.5 rounded-full font-bold">
-                    {doneTasks.length}
-                  </span>
-                </div>
-
-                <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-1">
-                  {doneTasks.length === 0 ? (
-                    <div className="text-[0.75rem] text-text-secondary italic text-center py-12">Nenhuma tarefa finalizada até o momento.</div>
-                  ) : (
-                    doneTasks.map(task => (
-                      <div key={task.id} className="bg-bg-primary/70 border border-border-color rounded-xl p-3.5 shadow-sm hover:border-emerald-500/40 transition-colors">
-                        <div className="flex justify-between items-start gap-2 mb-1.5">
-                          <h4 className="m-0 font-medium text-xs text-text-secondary line-through leading-snug">{task.titulo}</h4>
-                          {isOwnerOrAdmin && (
-                            <button 
-                              onClick={() => handleExcluirTask(task.id)} 
-                              title="Excluir tarefa"
-                              className="text-text-secondary hover:text-rose-600 text-xs bg-transparent border-none cursor-pointer p-0.5"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex justify-between items-center text-[0.7rem] text-text-secondary pt-2 border-t border-border-color">
-                          <span className="inline-flex items-center gap-1 font-medium">
-                            <span className="w-4 h-4 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center text-[0.6rem] font-bold">
-                              ✓
-                            </span>
-                            {task.assigned_username || 'Equipe'}
-                          </span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[0.65rem]">Entregue</span>
-                        </div>
-                        <div className="mt-2.5 pt-2 border-t border-border-color flex justify-start">
-                          <button 
-                            onClick={() => handleMoverTask(task.id, 'doing')}
-                            className="text-text-secondary hover:text-purple-primary text-[0.7rem] font-medium bg-transparent border-none cursor-pointer"
-                          >
-                            ↺ Reabrir Tarefa
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* ABA: CHAT DA EQUIPE */}
-        {activeTab === 'Mensagens' && (
-          <div className="flex flex-col flex-1 relative overflow-hidden bg-bg-primary">
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-4">
-              {mensagens.length === 0 ? (
-                <div className="flex flex-col items-center justify-center my-auto py-16 text-center text-text-secondary">
-                  <div className="w-12 h-12 rounded-full bg-purple-primary/10 text-purple-primary flex items-center justify-center mb-3">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  </div>
-                  <h3 className="font-title text-sm font-bold text-text-primary m-0">Canal de Comunicação do Projeto</h3>
-                  <p className="text-xs text-text-secondary mt-1 max-w-sm">Inicie uma conversa ou compartilhe alinhamentos com a equipe e orientador.</p>
-                </div>
-              ) : (
-                mensagens.map((msg, index) => {
-                  const isMe = msg.username === user?.username;
-                  return (
-                    <div key={msg.id || index} className={`flex gap-3 max-w-[85%] sm:max-w-[70%] ${isMe ? 'self-end flex-row-reverse' : 'self-start'}`}>
-                      {!isMe && (
-                        <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold bg-purple-primary shrink-0 shadow-sm mt-1">
-                          {(msg.username || 'U').substring(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-xs text-text-primary">{msg.username}</span>
-                          <span className="text-[0.65rem] text-text-secondary">{msg.data_envio}</span>
-                        </div>
-                        <div className={`p-3.5 rounded-2xl break-words text-xs sm:text-sm leading-relaxed ${
-                          isMe 
-                            ? 'bg-purple-primary text-white rounded-tr-none shadow-sm' 
-                            : 'bg-bg-surface border border-border-color text-text-primary rounded-tl-none shadow-sm'
-                        }`}>
-                          <p className="m-0 whitespace-pre-wrap">{msg.texto}</p>
-                          {msg.arquivo && (
-                            <a 
-                              href={msg.arquivo} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              className={`inline-flex items-center gap-1.5 mt-2.5 text-xs font-semibold underline ${isMe ? 'text-white' : 'text-purple-primary'}`}
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                              </svg>
-                              <span>Visualizar Anexo</span>
-                            </a>
-                          )}
-                        </div>
-                      </div>
+          {/* ==================== ABA: MENSAGENS / CHAT ==================== */}
+          {activeTab === 'Mensagens' && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                {mensagens.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center my-auto py-16 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#002B49] flex items-center justify-center mb-3">
+                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
                     </div>
-                  );
-                })
-              )}
-              <div ref={chatBottomRef} />
-            </div>
-
-            {/* Input de Mensagem */}
-            <form onSubmit={handleEnviarMensagem} className="bg-bg-surface border-t border-border-color p-3.5 sm:p-4 flex items-center gap-3">
-              <input 
-                type="text" 
-                placeholder="Escreva uma mensagem para a equipe acadêmica..." 
-                value={texto}
-                onChange={(e) => setTexto(e.target.value)}
-                className="flex-1 bg-bg-primary border border-border-color rounded-xl px-4 py-2.5 outline-none focus:border-purple-primary transition-colors text-xs sm:text-sm text-text-primary" 
-              />
-              <button 
-                type="submit"
-                disabled={enviando || !texto.trim()}
-                className="inline-flex items-center justify-center bg-purple-primary text-white border-none w-10 h-10 rounded-xl cursor-pointer hover:bg-purple-hover transition-colors shadow-sm disabled:opacity-50 shrink-0"
-                title="Enviar mensagem"
-              >
-                {enviando ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <h3 className="text-sm font-bold text-[#002B49]">Canal de Alinhamento Acadêmico</h3>
+                    <p className="text-xs text-slate-600 max-w-sm mt-1">Converse em tempo real com orientadores e pesquisadores do projeto.</p>
+                  </div>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
+                  mensagens.map((msg, idx) => {
+                    const isMe = msg.username === user?.username;
+                    return (
+                      <div key={msg.id || idx} className={`flex gap-2.5 max-w-[85%] sm:max-w-[70%] ${isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}>
+                        {!isMe && (
+                          <div className="w-7 h-7 rounded-lg bg-[#002B49] text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-1">
+                            {msg.username.substring(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          <div className="flex items-center gap-1.5 mb-1 px-1">
+                            <span className="text-[11px] font-bold text-slate-700">{msg.username}</span>
+                            <span className="text-[10px] text-slate-600">{msg.data_envio}</span>
+                          </div>
+                          <div className={`p-3 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-xs ${
+                            isMe 
+                              ? 'bg-[#002B49] text-white rounded-tr-xs' 
+                              : 'bg-white border border-slate-200 text-slate-800 rounded-tl-xs'
+                          }`}>
+                            <p className="m-0 whitespace-pre-wrap">{msg.texto}</p>
+                            {msg.arquivo && (
+                              <a 
+                                href={msg.arquivo} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className={`inline-flex items-center gap-1 mt-2 text-xs font-bold underline ${isMe ? 'text-white' : 'text-blue-600'}`}
+                              >
+                                Ver Anexo
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
-              </button>
-            </form>
-          </div>
-        )}
+                <div ref={chatBottomRef} />
+              </div>
 
-        {/* ABA: MÉTRICAS E INDICADORES */}
-        {activeTab === 'Métricas' && (
-          <div className="flex-1 p-6 overflow-y-auto bg-bg-primary space-y-6">
-            <div>
-              <h2 className="font-title text-lg font-bold text-text-primary m-0">Indicadores e Desempenho</h2>
-              <p className="text-xs text-text-secondary m-0 mt-0.5">Progresso quantitativo de tarefas e entregáveis do projeto.</p>
+              {/* Input do Chat */}
+              <form onSubmit={handleEnviarMensagem} className="p-3 sm:p-4 bg-white border-t border-slate-200 flex items-center gap-2">
+                <input 
+                  type="text"
+                  placeholder="Escreva uma mensagem para a equipe do projeto..."
+                  value={texto}
+                  onChange={(e) => setTexto(e.target.value)}
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm outline-none focus:border-[#002B49] focus:bg-white transition-all text-slate-800"
+                />
+                <button 
+                  type="submit"
+                  disabled={enviando || !texto.trim()}
+                  className="bg-[#002B49] text-white hover:bg-[#003B64] disabled:opacity-40 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                >
+                  {enviando ? 'Enviando...' : 'Enviar'}
+                </button>
+              </form>
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-bg-surface p-5 rounded-2xl border border-border-color shadow-sm">
-                <span className="text-text-secondary text-[0.7rem] font-bold uppercase tracking-wider block mb-1">Tarefas Registradas</span>
-                <span className="text-3xl font-bold font-title text-text-primary">{totalTasks}</span>
-              </div>
-              <div className="bg-bg-surface p-5 rounded-2xl border border-border-color shadow-sm">
-                <span className="text-text-secondary text-[0.7rem] font-bold uppercase tracking-wider block mb-1">Entregas Concluídas</span>
-                <span className="text-3xl font-bold font-title text-emerald-600 dark:text-emerald-400">{doneTasks.length}</span>
-              </div>
-              <div className="bg-bg-surface p-5 rounded-2xl border border-border-color shadow-sm">
-                <span className="text-text-secondary text-[0.7rem] font-bold uppercase tracking-wider block mb-1">Em Andamento</span>
-                <span className="text-3xl font-bold font-title text-blue-600 dark:text-blue-400">{doingTasks.length}</span>
-              </div>
-              <div className="bg-bg-surface p-5 rounded-2xl border border-border-color shadow-sm">
-                <span className="text-text-secondary text-[0.7rem] font-bold uppercase tracking-wider block mb-1">Taxa de Conclusão</span>
-                <span className="text-3xl font-bold font-title text-purple-primary">{percentComplete}%</span>
-              </div>
-            </div>
+          )}
 
-            <div className="bg-bg-surface p-6 rounded-2xl border border-border-color shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-title font-bold text-sm text-text-primary">Evolução Geral das Entregas</h3>
-                <span className="text-xs font-bold text-purple-primary">{percentComplete}%</span>
+          {/* ==================== ABA: MÉTRICAS ==================== */}
+          {activeTab === 'Métricas' && (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              <div>
+                <h2 className="text-base font-bold text-[#002B49] m-0">Indicadores Operacionais do Projeto</h2>
+                <p className="text-xs text-slate-600 m-0 mt-0.5">Acompanhamento do progresso geral e velocidade de entrega das atividades.</p>
               </div>
-              <div className="w-full bg-bg-primary h-3 rounded-full overflow-hidden border border-border-color">
-                <div 
-                  className="bg-purple-primary h-full transition-all duration-500 rounded-full"
-                  style={{ width: `${percentComplete}%` }}
-                ></div>
-              </div>
-              <div className="flex justify-between text-[0.7rem] text-text-secondary">
-                <span>0% Início</span>
-                <span>{doneTasks.length} de {totalTasks} concluídas</span>
-                <span>100% Meta Final</span>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* ABA: PARTICIPANTES */}
-        {activeTab === 'Participantes' && (
-          <div className="flex-1 p-6 overflow-y-auto bg-bg-primary space-y-6">
-            <div>
-              <h2 className="font-title text-lg font-bold text-text-primary m-0">Quadro de Membros e Responsáveis</h2>
-              <p className="text-xs text-text-secondary m-0 mt-0.5">Integrantes alocados na equipe de pesquisa deste projeto.</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Dono */}
-              <div className="bg-bg-surface p-5 rounded-2xl border border-border-color flex items-center gap-4 shadow-sm">
-                <div className="w-11 h-11 rounded-xl bg-purple-primary text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-                  {(projeto.owner_username || 'D').substring(0, 2).toUpperCase()}
+              {/* Cards de Métricas */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Total de Atividades</span>
+                  <span className="text-2xl font-bold text-[#002B49]">{totalTasks}</span>
                 </div>
-                <div className="min-w-0">
-                  <h4 className="m-0 font-bold text-text-primary text-xs truncate">{projeto.owner_username}</h4>
-                  <span className="text-[0.65rem] text-purple-primary font-semibold block mt-0.5">Líder / Criador da Proposta</span>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Concluídas</span>
+                  <span className="text-2xl font-bold text-emerald-600">{doneTasksTotal}</span>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Em Andamento</span>
+                  <span className="text-2xl font-bold text-blue-600">{tasks.filter(t => t.status === 'doing').length}</span>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Taxa de Sucesso</span>
+                  <span className="text-2xl font-bold text-[#002B49]">{percentComplete}%</span>
                 </div>
               </div>
 
-              {/* Orientador */}
-              {projeto.orientador && (
-                <div className="bg-bg-surface p-5 rounded-2xl border border-border-color flex items-center gap-4 shadow-sm">
-                  <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-                    {projeto.orientador.username.substring(0, 2).toUpperCase()}
+              {/* Barra de Progresso Institucional */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                  <span>Evolução Geral das Entregas</span>
+                  <span className="text-[#002B49]">{percentComplete}% Concluído</span>
+                </div>
+                <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden border border-slate-200">
+                  <div 
+                    className="bg-emerald-600 h-full transition-all duration-500 rounded-full"
+                    style={{ width: `${percentComplete}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-600">
+                  <span>Início do Ciclo</span>
+                  <span>{doneTasksTotal} de {totalTasks} tarefas concluídas</span>
+                  <span>Meta Final</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== ABA: PARTICIPANTES ==================== */}
+          {activeTab === 'Participantes' && (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              <div>
+                <h2 className="text-base font-bold text-[#002B49] m-0">Quadro de Membros e Responsáveis</h2>
+                <p className="text-xs text-slate-600 m-0 mt-0.5">Integrantes e orientadores alocados na execução desta pesquisa acadêmica.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Líder */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#002B49] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                    {(projeto.owner_username || 'L').substring(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="m-0 font-bold text-text-primary text-xs truncate">{projeto.orientador.username}</h4>
-                    <span className="text-[0.65rem] text-blue-600 dark:text-blue-400 font-semibold block mt-0.5">Professor Orientador</span>
+                    <h4 className="text-xs font-bold text-slate-800 m-0 truncate">{projeto.owner_username}</h4>
+                    <span className="text-[10px] text-blue-700 font-bold block mt-0.5">Líder do Projeto</span>
                   </div>
                 </div>
-              )}
 
-              {/* Membros */}
-              {membros.map((m, i) => (
-                <div key={i} className="bg-bg-surface p-5 rounded-2xl border border-border-color flex items-center gap-4 shadow-sm">
-                  <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-                    {m.substring(0, 2).toUpperCase()}
+                {/* Orientador */}
+                {projeto.orientador && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                      {projeto.orientador.username.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-slate-800 m-0 truncate">{projeto.orientador.username}</h4>
+                      <span className="text-[10px] text-blue-600 font-bold block mt-0.5">Professor Orientador</span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h4 className="m-0 font-bold text-text-primary text-xs truncate">{m}</h4>
-                    <span className="text-[0.65rem] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Aluno Pesquisador</span>
+                )}
+
+                {/* Alunos */}
+                {membros.map((m, i) => (
+                  <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                      {m.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-slate-800 m-0 truncate">{m}</h4>
+                      <span className="text-[10px] text-slate-600 font-semibold block mt-0.5">Aluno Pesquisador</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+          )}
+
+        </main>
+
+        {/* GAVETA / PAINEL LATERAL DIREITO: RESUMO INSTITUCIONAL DO PROJETO */}
+        <aside className={`
+          fixed lg:static inset-y-0 right-0 z-40 lg:z-10
+          w-72 sm:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0
+          transition-transform lg:transition-all duration-300 ease-in-out shadow-lg lg:shadow-none
+          ${rightOpen ? 'translate-x-0 lg:mr-0' : 'translate-x-full lg:-mr-72 sm:lg:-mr-80'}
+        `}>
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-[#002B49] uppercase tracking-wider m-0">Resumo da Pesquisa</h3>
+            <button 
+              onClick={() => setRightOpen(false)}
+              className="lg:hidden text-slate-600 hover:text-slate-800 p-1"
+            >
+              ✕
+            </button>
           </div>
-        )}
 
-      </section>
-
-      {/* BARRA LATERAL DIREITA: RESUMO DO PROJETO */}
-      <aside className={`w-[270px] bg-bg-surface border-l border-border-color flex flex-col shrink-0 transition-all duration-300 z-10 ${rightOpen ? 'mr-0' : '-mr-[270px]'}`}>
-        <div className="p-4 border-b border-border-color flex justify-between items-center">
-          <h3 className="m-0 font-title text-xs font-bold text-text-primary tracking-wide uppercase">Resumo Institucional</h3>
-        </div>
-
-        <div className="p-4 flex flex-col gap-5 overflow-y-auto">
-          {/* Header Card */}
-          <div className="rounded-xl overflow-hidden border border-border-color bg-bg-primary">
-            <div className="h-16 bg-purple-primary/10 border-b border-border-color flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
+          <div className="p-4 space-y-4 overflow-y-auto flex-1">
+            <div>
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Título</span>
+              <p className="text-xs font-bold text-slate-800 m-0">{projeto.titulo}</p>
             </div>
-            <div className="p-3 text-center">
-              <h4 className="m-0 font-bold text-xs text-text-primary mb-1">{projeto.titulo}</h4>
-              <span className="text-[0.65rem] px-2 py-0.5 rounded-full font-bold bg-purple-primary/10 text-purple-primary">
-                {projeto.categoria}
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Situação</span>
+              <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {projeto.status}
               </span>
             </div>
-          </div>
-          
-          {/* Métricas rápidas */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="bg-bg-primary border border-border-color p-3 rounded-xl flex flex-col items-center text-center">
-              <span className="font-bold text-lg text-text-primary leading-none">{tasks.length}</span>
-              <span className="text-[0.65rem] text-text-secondary font-semibold uppercase tracking-wider mt-1">Tarefas</span>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Descrição Curta</span>
+              <p className="text-xs text-slate-600 leading-relaxed m-0">{projeto.descricao_curta}</p>
             </div>
-            <div className="bg-bg-primary border border-border-color p-3 rounded-xl flex flex-col items-center text-center">
-              <span className="font-bold text-lg text-purple-primary leading-none">{mensagens.length}</span>
-              <span className="text-[0.65rem] text-text-secondary font-semibold uppercase tracking-wider mt-1">Mensagens</span>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Tags</span>
+              <p className="text-xs text-slate-700 m-0">{projeto.tags || 'Geral'}</p>
             </div>
           </div>
+        </aside>
 
-          {/* Descrição */}
-          <div>
-            <h4 className="font-title text-[0.7rem] text-text-secondary uppercase tracking-wider font-bold mb-1.5">Sobre a Pesquisa</h4>
-            <p className="text-xs text-text-secondary leading-relaxed m-0">{projeto.descricao_curta}</p>
-          </div>
+      </div>
 
-          {/* Situação */}
-          <div>
-            <h4 className="font-title text-[0.7rem] text-text-secondary uppercase tracking-wider font-bold mb-1.5">Situação Operacional</h4>
-            <span className="inline-block px-2.5 py-1 rounded-full text-[0.7rem] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              {projeto.status}
-            </span>
-          </div>
-        </div>
-      </aside>
-
-      {/* MODAL: NOVA TAREFA KANBAN */}
+      {/* ======================================================== */}
+      {/* 3. MODAL: NOVA TAREFA (COM ADIÇÃO DE SUBTAREFAS) */}
+      {/* ======================================================== */}
       {showNewTaskModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-bg-surface rounded-2xl max-w-md w-full p-6 shadow-xl border border-border-color">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-title text-base font-bold text-text-primary m-0">Cadastrar Nova Tarefa</h3>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-xl border border-slate-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 shrink-0">
+              <h3 className="text-sm font-bold text-[#002B49] m-0">Cadastrar Nova Tarefa & Subtarefas</h3>
               <button 
-                onClick={() => setShowNewTaskModal(false)} 
-                className="text-text-secondary hover:text-text-primary text-base bg-transparent border-none cursor-pointer"
+                onClick={() => setShowNewTaskModal(false)}
+                className="text-slate-600 hover:text-slate-800 text-sm p-1"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCriarTask} className="space-y-4">
+            <form onSubmit={handleCriarTask} className="space-y-4 overflow-y-auto flex-1 pr-1">
               <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Título da Tarefa *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Título da Atividade *</label>
                 <input 
                   type="text" 
                   required
-                  placeholder="Ex: Desenvolver fluxo de autenticação" 
+                  placeholder="Ex: Desenvolver componente do Workspace"
                   value={taskTitulo}
                   onChange={(e) => setTaskTitulo(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-color rounded-xl px-3 py-2 text-xs text-text-primary outline-none focus:border-purple-primary transition-colors"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Descrição e Critérios</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Critérios e Descrição</label>
                 <textarea 
-                  rows={3}
-                  placeholder="Detalhes da entrega esperada..." 
+                  rows={2}
+                  placeholder="Instruções de desenvolvimento para os pesquisadores..."
                   value={taskDescricao}
                   onChange={(e) => setTaskDescricao(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-color rounded-xl px-3 py-2 text-xs text-text-primary outline-none focus:border-purple-primary transition-colors resize-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white transition-all resize-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Atribuir a</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Responsável</label>
                   <select 
                     value={taskAssigned}
                     onChange={(e) => setTaskAssigned(e.target.value)}
-                    className="w-full bg-bg-primary border border-border-color rounded-xl px-2.5 py-2 text-xs text-text-primary outline-none focus:border-purple-primary transition-colors"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 outline-none focus:border-[#002B49]"
                   >
-                    <option value="">Qualquer Membro</option>
+                    <option value="">Equipe Geral</option>
                     <option value={projeto.owner_username}>{projeto.owner_username} (Líder)</option>
                     {membros.map((m, i) => (
                       <option key={i} value={m}>{m}</option>
@@ -875,31 +1158,250 @@ export function Workspace() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Prazo Limite</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Prazo Limite</label>
                   <input 
-                    type="date" 
+                    type="date"
                     value={taskDeadline}
                     onChange={(e) => setTaskDeadline(e.target.value)}
-                    className="w-full bg-bg-primary border border-border-color rounded-xl px-2.5 py-2 text-xs text-text-primary outline-none focus:border-purple-primary transition-colors"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800 outline-none focus:border-[#002B49]"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-border-color">
+              {/* SEÇÃO DE SUBTAREFAS / CHECKLIST */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-xs font-bold text-[#002B49] mb-1">
+                  Subtarefas (Checklist)
+                </label>
+                <p className="text-[11px] text-slate-600 m-0 mb-2">
+                  Divida a entrega em passos práticos. Digite o item e pressione Enter ou clique em Adicionar.
+                </p>
+
+                <div className="flex gap-2 mb-2.5">
+                  <input 
+                    type="text"
+                    placeholder="Adicionar subtarefa (ex: Criar testes unitários)..."
+                    value={tempSubtaskInput}
+                    onChange={(e) => setTempSubtaskInput(e.target.value)}
+                    onKeyDown={handleAddTempSubtask}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white"
+                  />
+                  <button 
+                    type="button"
+                    onClick={handleAddTempSubtask}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    + Adicionar
+                  </button>
+                </div>
+
+                {/* Lista de subtarefas adicionadas */}
+                {newSubtasks.length > 0 && (
+                  <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 max-h-36 overflow-y-auto">
+                    {newSubtasks.map((st, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-slate-100 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-4 h-4 rounded border border-slate-300 flex items-center justify-center text-[10px] text-slate-600">
+                            {idx + 1}
+                          </span>
+                          <span className="truncate text-slate-700">{st}</span>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => handleRemoveTempSubtask(idx)}
+                          className="text-slate-600 hover:text-rose-600 text-xs p-1"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botões do Rodapé do Modal */}
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
                 <button 
-                  type="button" 
+                  type="button"
                   onClick={() => setShowNewTaskModal(false)}
-                  className="bg-bg-primary border border-border-color text-text-secondary px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer hover:text-text-primary transition-colors"
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button 
-                  type="submit" 
+                  type="submit"
                   disabled={creatingTask}
-                  className="bg-purple-primary text-white border-none px-4 py-2 rounded-xl text-xs font-bold cursor-pointer hover:bg-purple-hover transition-colors shadow-sm disabled:opacity-50"
+                  className="bg-[#002B49] hover:bg-[#003B64] text-white font-bold px-5 py-2 rounded-xl text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  {creatingTask ? 'Salvando...' : 'Criar Tarefa'}
+                  {creatingTask ? 'Registrando...' : 'Criar Tarefa'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 4. MODAL: DETALHES E EDIÇÃO DE TAREFA & SUBTAREFAS */}
+      {/* ======================================================== */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-xl border border-slate-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-3 pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  editingTask.status === 'done' 
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                    : editingTask.status === 'doing'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}>
+                  {editingTask.status === 'done' ? 'Concluído' : editingTask.status === 'doing' ? 'Em Andamento' : 'A Fazer'}
+                </span>
+                <h3 className="text-sm font-bold text-[#002B49] m-0">Gerenciar Tarefa #{editingTask.id}</h3>
+              </div>
+              <button 
+                onClick={() => setEditingTask(null)}
+                className="text-slate-600 hover:text-slate-800 text-sm p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarEdicaoTask} className="space-y-3.5 overflow-y-auto flex-1 pr-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Título da Atividade</label>
+                <input 
+                  type="text" 
+                  required
+                  value={editTitulo}
+                  onChange={(e) => setEditTitulo(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Descrição</label>
+                <textarea 
+                  rows={2}
+                  value={editDescricao}
+                  onChange={(e) => setEditDescricao(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Atribuído a</label>
+                  <select 
+                    value={editAssigned}
+                    onChange={(e) => setEditAssigned(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-[#002B49]"
+                  >
+                    <option value="">Equipe Geral</option>
+                    <option value={projeto.owner_username}>{projeto.owner_username} (Líder)</option>
+                    {membros.map((m, i) => (
+                      <option key={i} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Prazo</label>
+                  <input 
+                    type="date"
+                    value={editDeadline}
+                    onChange={(e) => setEditDeadline(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-[#002B49]"
+                  />
+                </div>
+              </div>
+
+              {/* GESTÃO DE SUBTAREFAS NESTE MODAL */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-[#002B49]">
+                    Subtarefas ({editSubtasks.filter(s => s.done).length}/{editSubtasks.length} concluídas)
+                  </label>
+                </div>
+
+                {/* Campo para adicionar nova subtarefa */}
+                <div className="flex gap-2 mb-2">
+                  <input 
+                    type="text"
+                    placeholder="Nova subtarefa e pressione Enter..."
+                    value={editNewSubtaskText}
+                    onChange={(e) => setEditNewSubtaskText(e.target.value)}
+                    onKeyDown={handleAddEditSubtask}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:border-[#002B49] focus:bg-white"
+                  />
+                  <button 
+                    type="button"
+                    onClick={handleAddEditSubtask}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    + Adicionar
+                  </button>
+                </div>
+
+                {/* Lista Interativa de Subtarefas */}
+                <div className="space-y-1 bg-slate-50 p-2 rounded-xl border border-slate-200/80 max-h-40 overflow-y-auto">
+                  {editSubtasks.length === 0 ? (
+                    <div className="text-center py-4 text-xs text-slate-600">Nenhuma subtarefa adicionada.</div>
+                  ) : (
+                    editSubtasks.map((st, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-slate-100">
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                          <input 
+                            type="checkbox"
+                            checked={st.done}
+                            onChange={() => handleToggleEditSubtask(i)}
+                            className="w-3.5 h-3.5 text-[#002B49] rounded cursor-pointer"
+                          />
+                          <span className={`text-xs truncate ${st.done ? 'line-through text-slate-600' : 'text-slate-800'}`}>
+                            {st.text}
+                          </span>
+                        </label>
+                        <button 
+                          type="button"
+                          onClick={() => handleRemoveEditSubtask(i)}
+                          className="text-slate-600 hover:text-rose-600 text-xs p-1"
+                          title="Remover subtarefa"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Rodapé do Modal */}
+              <div className="flex justify-between items-center pt-3 border-t border-slate-100 shrink-0">
+                <button 
+                  type="button"
+                  onClick={() => handleExcluirTask(editingTask.id)}
+                  className="text-rose-600 hover:text-rose-800 text-xs font-bold hover:underline"
+                >
+                  Excluir Tarefa
+                </button>
+
+                <div className="flex gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => setEditingTask(null)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={savingEdit}
+                    className="bg-[#002B49] hover:bg-[#003B64] text-white font-bold px-4 py-1.5 rounded-xl text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {savingEdit ? 'Salvando...' : 'Salvar Alterações'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -908,4 +1410,179 @@ export function Workspace() {
 
     </div>
   );
+
+  // ========================================================
+  // FUNÇÃO AUXILIAR: RENDERIZAÇÃO DO CARD DE TAREFA COM SUBTAREFAS
+  // ========================================================
+  function renderTaskCard(task: TaskItem, columnStatus: 'todo' | 'doing' | 'done') {
+    const subtasks = normalizeSubtasks(task.checklist);
+    const hasSubtasks = subtasks.length > 0;
+    const completedSubtasks = subtasks.filter(s => s.done).length;
+    const subtaskPercent = hasSubtasks ? Math.round((completedSubtasks / subtasks.length) * 100) : 0;
+    const isExpanded = Boolean(expandedSubtasks[task.id]);
+
+    return (
+      <div 
+        key={task.id}
+        draggable
+        onDragStart={() => setDraggedTaskId(task.id)}
+        onDragEnd={() => setDraggedTaskId(null)}
+        onClick={() => handleOpenEditTask(task)}
+        className={`
+          bg-white rounded-xl p-3.5 border transition-all cursor-pointer shadow-xs hover:shadow-md
+          ${draggedTaskId === task.id ? 'opacity-40 scale-98 border-[#002B49]' : 'border-slate-200/90 hover:border-slate-300'}
+        `}
+      >
+        {/* Linha superior: Responsável + Prazo */}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          {/* Avatar e Responsável */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-[#002B49] flex items-center justify-center text-[10px] font-bold shrink-0">
+              {(task.assigned_username || 'G').substring(0, 1).toUpperCase()}
+            </span>
+            <span className="text-[11px] font-semibold text-slate-600 truncate max-w-[120px]">
+              {task.assigned_username || 'Equipe Geral'}
+            </span>
+          </div>
+
+          {/* Prazo Limite e Exclusão */}
+          <div className="flex items-center gap-1.5">
+            {task.deadline && (
+              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                columnStatus === 'done' 
+                  ? 'bg-slate-100 text-slate-600'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200/60'
+              }`}>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>{task.deadline}</span>
+              </span>
+            )}
+            {isOwnerOrAdmin && (
+              <button 
+                onClick={(e) => handleExcluirTask(task.id, e)}
+                title="Excluir tarefa"
+                className="text-slate-600 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Título da Tarefa */}
+        <h4 className={`text-xs font-bold leading-snug m-0 mb-1 ${columnStatus === 'done' ? 'line-through text-slate-600' : 'text-slate-800'}`}>
+          {task.titulo}
+        </h4>
+
+        {/* Descrição Compacta */}
+        {task.descricao && (
+          <p className="text-[11px] text-slate-600 m-0 mb-2.5 line-clamp-2 leading-relaxed">
+            {task.descricao}
+          </p>
+        )}
+
+        {/* ======================================================== */}
+        {/* SEÇÃO DE SUBTAREFAS NO CARD (COM BARRA DE PROGRESSO & EXPANSÃO) */}
+        {/* ======================================================== */}
+        {hasSubtasks && (
+          <div className="mb-2.5 p-2 bg-slate-50 border border-slate-200/70 rounded-lg">
+            {/* Header da Subtarefa: Contador + Botão de Expansão */}
+            <div 
+              onClick={(e) => toggleSubtasksExpand(task.id, e)}
+              className="flex items-center justify-between text-[11px] font-bold text-slate-700 cursor-pointer hover:text-[#002B49]"
+            >
+              <div className="flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                <span>Subtarefas ({completedSubtasks}/{subtasks.length})</span>
+              </div>
+              <span className="text-[10px] text-blue-600 font-bold hover:underline">
+                {isExpanded ? '▴ Ocultar' : '▾ Ver Lista'}
+              </span>
+            </div>
+
+            {/* Barra de Progresso da Subtarefa */}
+            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1.5">
+              <div 
+                className={`h-full transition-all duration-300 rounded-full ${subtaskPercent === 100 ? 'bg-emerald-600' : 'bg-blue-600'}`}
+                style={{ width: `${subtaskPercent}%` }}
+              />
+            </div>
+
+            {/* Lista Expansível de Checkboxes */}
+            {isExpanded && (
+              <div className="mt-2 pt-2 border-t border-slate-200/70 space-y-1.5">
+                {subtasks.map((st, sIdx) => (
+                  <label 
+                    key={sIdx}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer hover:text-slate-900"
+                  >
+                    <input 
+                      type="checkbox"
+                      checked={st.done}
+                      onChange={(e) => handleToggleSubtaskOnCard(task, sIdx, e as any)}
+                      className="w-3.5 h-3.5 text-[#002B49] rounded cursor-pointer"
+                    />
+                    <span className={`truncate ${st.done ? 'line-through text-slate-600' : 'text-slate-800'}`}>
+                      {st.text}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Rodapé do Card: Ações Rápidas de Movimentação */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            {columnStatus !== 'todo' && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleMoverTask(task.id, columnStatus === 'done' ? 'doing' : 'todo'); }}
+                title="Mover para a etapa anterior"
+                className="text-[10px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-md transition-colors"
+              >
+                ← Voltar
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            {columnStatus === 'todo' && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleMoverTask(task.id, 'doing'); }}
+                className="text-[10px] font-bold text-white bg-[#002B49] hover:bg-[#003B64] px-2.5 py-0.5 rounded-md transition-colors shadow-2xs"
+              >
+                Iniciar →
+              </button>
+            )}
+
+            {columnStatus === 'doing' && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleMoverTask(task.id, 'done'); }}
+                className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-0.5 rounded-md transition-colors shadow-2xs flex items-center gap-1"
+              >
+                <span>Concluir</span>
+                <span>✓</span>
+              </button>
+            )}
+
+            {columnStatus === 'done' && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleMoverTask(task.id, 'doing'); }}
+                className="text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
+              >
+                ↺ Reabrir
+              </button>
+            )}
+          </div>
+        </div>
+
+      </div>
+    );
+  }
 }

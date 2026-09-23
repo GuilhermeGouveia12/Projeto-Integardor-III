@@ -808,11 +808,11 @@ def api_criar_task(projeto_id):
     
     equipe_cands = Application.query.filter_by(projeto_id=projeto_id, status='APROVADA').all()
     membros = [c.username for c in equipe_cands]
-    
+    is_member = (username in membros)
     is_lider = (role == 'lider') or (username in membros and role == 'lider')
     
-    if not is_owner and not is_admin and not is_lider:
-        return jsonify({"error": "Apenas Líderes (Scrum Master), Administradores ou Orientadores podem criar tarefas."}), 403
+    if not is_owner and not is_admin and not is_lider and not is_member:
+        return jsonify({"error": "Apenas integrantes da equipe, líderes, administradores ou orientadores podem criar tarefas."}), 403
         
     data = request.get_json(silent=True) or request.form
     titulo = data.get('titulo')
@@ -927,11 +927,12 @@ def api_editar_task(projeto_id, task_id):
     
     equipe_cands = Application.query.filter_by(projeto_id=projeto_id, status='APROVADA').all()
     membros = [c.username for c in equipe_cands]
+    is_member = (username in membros)
+    is_assigned = (task.assigned_username == username)
+    is_lider = (role == 'lider') or (is_member and role == 'lider')
     
-    is_lider = (role == 'lider') or (username in membros and role == 'lider')
-    
-    if not is_owner and not is_admin and not is_lider:
-        return jsonify({"error": "Apenas Líderes, Administradores ou Orientadores podem editar tarefas."}), 403
+    if not is_owner and not is_admin and not is_lider and not is_member and not is_assigned:
+        return jsonify({"error": "Apenas integrantes do projeto, líderes, administradores ou orientadores podem editar tarefas."}), 403
         
     data = request.get_json(silent=True) or request.form
     titulo = data.get('titulo')
