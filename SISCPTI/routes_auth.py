@@ -85,19 +85,8 @@ def api_cadastro():
     # Em produção (Vercel), usa APP_URL. Localmente usa request.host_url.
     base_url = get_frontend_url() or request.host_url.rstrip('/')
     link = base_url + f"/verificar-conta/{token}"
-    img_path = os.path.join(base_dir, 'static', 'img', 'mail', 'authentication.png')
-    
-    if os.path.exists(img_path):
-        corpo = email_template_ativacao(username, link, img_src="cid:auth_illustration")
-        enviado = enviar_email(
-            email, 
-            'Ative sua conta – SisCPTI', 
-            corpo,
-            inline_images=[{'cid': 'auth_illustration', 'path': img_path}]
-        )
-    else:
-        corpo = email_template_ativacao(username, link, base_url=base_url)
-        enviado = enviar_email(email, 'Ative sua conta – SisCPTI', corpo)
+    corpo = email_template_ativacao(username, link, base_url=base_url)
+    enviado = enviar_email(email, 'Ativação de Conta Institucional – SisCPTI · UniCEUB', corpo)
 
     return jsonify({
         "status": "success", 
@@ -219,19 +208,8 @@ def api_recuperar_senha():
         
         base_url = get_frontend_url() or request.host_url.rstrip('/')
         link = base_url + f"/redefinir-senha/{token}"
-        img_path = os.path.join(base_dir, 'static', 'img', 'mail', 'reset_password.png')
-        
-        if os.path.exists(img_path):
-            corpo = email_template_recuperacao(user.username, link, img_src="cid:reset_illustration")
-            enviar_email(
-                email, 
-                'Recuperação de Senha – SisCPTI', 
-                corpo,
-                inline_images=[{'cid': 'reset_illustration', 'path': img_path}]
-            )
-        else:
-            corpo = email_template_recuperacao(user.username, link, base_url=base_url)
-            enviar_email(email, 'Recuperação de Senha – SisCPTI', corpo)
+        corpo = email_template_recuperacao(user.username, link, base_url=base_url)
+        enviar_email(email, 'Redefinição de Senha – SisCPTI · UniCEUB', corpo)
         
     return jsonify({"status": "success", "message": "Se o e-mail existir, um link de recuperação foi enviado."})
 

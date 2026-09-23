@@ -13,72 +13,122 @@ def get_frontend_url():
     return os.environ.get('APP_URL', '').rstrip('/') or ''
 
 
-def email_template_ativacao(username: str, link: str, img_src: str = None, base_url: str = None) -> str:
-    if not img_src:
-        if base_url and not any(h in base_url for h in ['localhost', '127.0.0.1']):
-            img_src = f"{base_url.rstrip('/')}/static/img/mail/authentication.png"
-        else:
-            img_src = "https://projeto-integardor-ii.vercel.app/static/img/mail/authentication.png"
+def email_template_ativacao(username: str, link: str, base_url: str = None) -> str:
+    prod_url = "https://projeto-integardor-ii.vercel.app"
+    img_base = base_url.rstrip('/') if (base_url and not any(h in base_url for h in ['localhost', '127.0.0.1'])) else prod_url
+    logo_url = f"{img_base}/static/logoCEUB.png"
+    img_url = f"{img_base}/static/img/mail/authentication.png"
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Ative sua conta – SisCPTI</title>
+  <title>Comunicado Institucional – UniCEUB</title>
 </head>
-<body style="margin:0;padding:32px 16px;background:#f3f4f6;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);border:1px solid #e5e7eb;">
+<body style="margin:0;padding:40px 15px;background:#f0f2f5;font-family:'Segoe UI',Roboto,-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#1e293b;">
+
+  <!-- Main Container -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
     
-    <!-- Top Gradient Header -->
+    <!-- Top Accent Bar (CEUB Colors: Purple & Magenta) -->
     <tr>
-      <td style="background:linear-gradient(135deg,#3B0054 0%,#6A0DAD 50%,#7A1BB5 100%);padding:36px 30px 32px;text-align:center;">
+      <td style="height:5px;background:linear-gradient(90deg, #3A1346 0%, #3A1346 70%, #A2237D 70%, #A2237D 100%);"></td>
+    </tr>
+
+    <!-- Institutional Brand Header -->
+    <tr>
+      <td style="padding:24px 36px 20px;background:#ffffff;border-bottom:1px solid #edf2f7;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td align="center">
-              <div style="display:inline-block;padding:6px 14px;background:rgba(255,255,255,0.15);border-radius:20px;margin-bottom:12px;">
-                <span style="color:#ffffff;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">Plataforma Oficial UniCEUB</span>
+            <td align="left" valign="middle">
+              <img src="{logo_url}"
+                   alt="CEUB - Centro Universitário de Brasília"
+                   height="42"
+                   style="height:42px;width:auto;display:block;border:0;" />
+            </td>
+            <td align="right" valign="middle">
+              <div style="text-align:right;">
+                <span style="font-size:13px;font-weight:700;color:#3A1346;letter-spacing:0.5px;text-transform:uppercase;display:block;">SisCPTI</span>
+                <span style="font-size:11px;color:#64748b;display:block;margin-top:2px;">Caderno de Projetos de TI</span>
               </div>
-              <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;letter-spacing:-0.5px;">SisCPTI</h1>
-              <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px;font-weight:400;">Sistema de Gestão do Caderno de Projetos de TI</p>
             </td>
           </tr>
         </table>
       </td>
     </tr>
 
-    <!-- Hero Illustration Section -->
+    <!-- Title Banner -->
     <tr>
-      <td align="center" style="padding:32px 30px 12px;background:#ffffff;">
-        <img src="{img_src}"
-             alt="Autenticação SisCPTI"
-             width="240"
-             style="display:block;margin:0 auto;width:240px;max-width:100%;height:auto;border:0;outline:none;" />
+      <td style="background:#3A1346;padding:24px 36px;text-align:left;">
+        <span style="display:inline-block;padding:3px 10px;background:rgba(162,35,125,0.4);border:1px solid rgba(255,255,255,0.2);border-radius:4px;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:8px;">
+          Comunicado Oficial · Ativação de Acesso
+        </span>
+        <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">
+          Confirmação de Cadastro Institucional
+        </h1>
+        <p style="margin:4px 0 0;color:#e2d9e6;font-size:13px;">
+          Centro Universitário de Brasília — Disciplina de Projeto Integrador
+        </p>
       </td>
     </tr>
 
-    <!-- Main Content -->
+    <!-- Hero Illustration (Direct HTML Image from Vercel CDN - NOT an Attachment) -->
     <tr>
-      <td style="padding:10px 40px 36px;">
-        <h2 style="margin:0 0 12px;font-size:22px;font-weight:700;color:#111827;text-align:center;letter-spacing:-0.3px;">
-          Ative sua conta de acesso ✨
-        </h2>
-        <p style="margin:0 0 16px;font-size:15px;color:#4b5563;line-height:1.7;text-align:center;">
-          Olá, <strong style="color:#4B006E;">{username}</strong>! 👋<br/>
-          Seu cadastro na plataforma <strong style="color:#4B006E;">SisCPTI</strong> foi realizado com sucesso.
-          Para validar seu e-mail e liberar seu acesso imediato a projetos, candidaturas e ao Workspace institucional, confirme no botão abaixo:
+      <td align="center" style="padding:32px 36px 12px;background:#ffffff;">
+        <img src="{img_url}"
+             alt="Autenticação de Conta"
+             width="230"
+             style="display:block;margin:0 auto;width:230px;max-width:100%;height:auto;border:0;outline:none;" />
+      </td>
+    </tr>
+
+    <!-- Body Content -->
+    <tr>
+      <td style="padding:10px 36px 28px;">
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#334155;">
+          Prezado(a) discente/docente <strong style="color:#3A1346;">{username}</strong>,
+        </p>
+        <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#475569;">
+          Informamos que o seu registro na plataforma institucional <strong>SisCPTI (Caderno de Projetos de TI)</strong> do UniCEUB foi iniciado. Para concluir a validação de suas credenciais acadêmicas e habilitar o seu acesso a submissões, candidaturas e ao Workspace do projeto, confirme sua conta no botão abaixo:
         </p>
 
-        <!-- CTA Button -->
+        <!-- Formal Metadata Box -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;border-left:4px solid #3A1346;">
+          <tr>
+            <td style="padding:14px 18px;">
+              <table width="100%" cellpadding="3" cellspacing="0" style="font-size:13px;color:#475569;">
+                <tr>
+                  <td width="130" style="font-weight:600;color:#1e293b;">Sistema:</td>
+                  <td>SisCPTI · UniCEUB</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:600;color:#1e293b;">Identificador:</td>
+                  <td>{username}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:600;color:#1e293b;">Finalidade:</td>
+                  <td>Ativação de Credencial de Acesso</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:600;color:#1e293b;">Validade do Link:</td>
+                  <td><span style="color:#059669;font-weight:600;">24 horas</span> (expira automaticamente)</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Formal Institutional Action Button -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
           <tr>
             <td align="center">
               <table cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="border-radius:12px;background:linear-gradient(135deg,#4B006E 0%,#7A1BB5 100%);box-shadow:0 4px 16px rgba(122,27,181,0.35);text-align:center;">
+                  <td style="border-radius:8px;background:#3A1346;text-align:center;box-shadow:0 3px 10px rgba(58,19,70,0.25);">
                     <a href="{link}"
-                       style="display:inline-block;padding:16px 42px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.3px;border-radius:12px;font-family:'Segoe UI',Arial,sans-serif;">
-                      ✅ Ativar Minha Conta
+                       style="display:inline-block;padding:15px 38px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.5px;text-transform:uppercase;font-family:'Segoe UI',Roboto,sans-serif;">
+                      Confirmar e Ativar Minha Conta
                     </a>
                   </td>
                 </tr>
@@ -87,36 +137,34 @@ def email_template_ativacao(username: str, link: str, img_src: str = None, base_
           </tr>
         </table>
 
-        <!-- Security / Validity Info Box -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f4ff;border-left:4px solid #7A1BB5;border-radius:0 10px 10px 0;margin-bottom:24px;">
-          <tr>
-            <td style="padding:16px 20px;">
-              <p style="margin:0;font-size:13px;color:#4B006E;font-weight:700;">⏰ Link válido por 24 horas</p>
-              <p style="margin:6px 0 0;font-size:12px;color:#6b7280;line-height:1.6;">
-                Caso o botão não funcione, copie e cole o link direto no seu navegador:
-              </p>
-              <p style="margin:8px 0 0;font-size:12px;color:#7A1BB5;word-break:break-all;font-family:monospace;background:#ede4ff;padding:8px 12px;border-radius:6px;">
-                {link}
-              </p>
-            </td>
-          </tr>
-        </table>
+        <!-- Fallback Link Section -->
+        <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:6px;padding:14px 16px;margin-bottom:20px;">
+          <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#475569;">
+            Caso não consiga utilizar o botão acima, copie e cole o link institucional abaixo no seu navegador:
+          </p>
+          <p style="margin:0;font-size:12px;color:#3A1346;word-break:break-all;font-family:Consolas,monospace;">
+            {link}
+          </p>
+        </div>
 
-        <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.6;text-align:center;">
-          Se você não solicitou este cadastro no SisCPTI, por favor desconsidere este e-mail. Nenhuma ação será realizada na sua conta.
+        <p style="margin:0;font-size:12px;color:#64748b;line-height:1.6;">
+          <strong>Aviso de Segurança:</strong> Caso você não tenha realizado este cadastro institucional no SisCPTI, favor desconsiderar este e-mail. Nenhuma ação será realizada na sua conta.
         </p>
       </td>
     </tr>
 
-    <!-- Institutional Footer -->
+    <!-- Formal Institutional Footer -->
     <tr>
-      <td style="background:#fafafa;border-top:1px solid #f0f0f0;padding:24px 30px;text-align:center;">
-        <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6b7280;">
+      <td style="background:#f8fafc;border-top:1px solid #edf2f7;padding:24px 36px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#3A1346;">
           Centro Universitário de Brasília – UniCEUB
         </p>
-        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5;">
-          SisCPTI · Caderno de Projetos de TI<br/>
-          Este é um e-mail automático gerado pelo sistema. Por favor, não responda.
+        <p style="margin:0 0 10px;font-size:12px;color:#64748b;line-height:1.6;">
+          SEPN 707/907 - Campus Universitário Darcy Ribeiro, Asa Norte, Brasília - DF, CEP 70790-075<br/>
+          Pró-Reitoria de Graduação · Coordenação de Cursos de Tecnologia da Informação
+        </p>
+        <p style="margin:0;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px;">
+          Mensagem institucional automática. Este canal não recebe respostas.
         </p>
       </td>
     </tr>
@@ -127,72 +175,122 @@ def email_template_ativacao(username: str, link: str, img_src: str = None, base_
 """
 
 
-def email_template_recuperacao(username: str, link: str, img_src: str = None, base_url: str = None) -> str:
-    if not img_src:
-        if base_url and not any(h in base_url for h in ['localhost', '127.0.0.1']):
-            img_src = f"{base_url.rstrip('/')}/static/img/mail/reset_password.png"
-        else:
-            img_src = "https://projeto-integardor-ii.vercel.app/static/img/mail/reset_password.png"
+def email_template_recuperacao(username: str, link: str, base_url: str = None) -> str:
+    prod_url = "https://projeto-integardor-ii.vercel.app"
+    img_base = base_url.rstrip('/') if (base_url and not any(h in base_url for h in ['localhost', '127.0.0.1'])) else prod_url
+    logo_url = f"{img_base}/static/logoCEUB.png"
+    img_url = f"{img_base}/static/img/mail/reset_password.png"
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Recuperação de Senha – SisCPTI</title>
+  <title>Recuperação de Senha Institucional – UniCEUB</title>
 </head>
-<body style="margin:0;padding:32px 16px;background:#f3f4f6;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);border:1px solid #e5e7eb;">
+<body style="margin:0;padding:40px 15px;background:#f0f2f5;font-family:'Segoe UI',Roboto,-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#1e293b;">
+
+  <!-- Main Container -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
     
-    <!-- Top Gradient Header -->
+    <!-- Top Accent Bar (CEUB Colors: Purple & Magenta) -->
     <tr>
-      <td style="background:linear-gradient(135deg,#3B0054 0%,#6A0DAD 50%,#7A1BB5 100%);padding:36px 30px 32px;text-align:center;">
+      <td style="height:5px;background:linear-gradient(90deg, #3A1346 0%, #3A1346 70%, #A2237D 70%, #A2237D 100%);"></td>
+    </tr>
+
+    <!-- Institutional Brand Header -->
+    <tr>
+      <td style="padding:24px 36px 20px;background:#ffffff;border-bottom:1px solid #edf2f7;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td align="center">
-              <div style="display:inline-block;padding:6px 14px;background:rgba(255,255,255,0.15);border-radius:20px;margin-bottom:12px;">
-                <span style="color:#ffffff;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">Segurança & Acesso UniCEUB</span>
+            <td align="left" valign="middle">
+              <img src="{logo_url}"
+                   alt="CEUB - Centro Universitário de Brasília"
+                   height="42"
+                   style="height:42px;width:auto;display:block;border:0;" />
+            </td>
+            <td align="right" valign="middle">
+              <div style="text-align:right;">
+                <span style="font-size:13px;font-weight:700;color:#3A1346;letter-spacing:0.5px;text-transform:uppercase;display:block;">SisCPTI</span>
+                <span style="font-size:11px;color:#64748b;display:block;margin-top:2px;">Segurança & Credenciais</span>
               </div>
-              <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;letter-spacing:-0.5px;">SisCPTI</h1>
-              <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px;font-weight:400;">Sistema de Gestão do Caderno de Projetos de TI</p>
             </td>
           </tr>
         </table>
       </td>
     </tr>
 
-    <!-- Hero Illustration Section -->
+    <!-- Title Banner -->
     <tr>
-      <td align="center" style="padding:32px 30px 12px;background:#ffffff;">
-        <img src="{img_src}"
-             alt="Recuperação de Senha SisCPTI"
-             width="240"
-             style="display:block;margin:0 auto;width:240px;max-width:100%;height:auto;border:0;outline:none;" />
+      <td style="background:#3A1346;padding:24px 36px;text-align:left;">
+        <span style="display:inline-block;padding:3px 10px;background:rgba(162,35,125,0.4);border:1px solid rgba(255,255,255,0.2);border-radius:4px;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:8px;">
+          Segurança da Informação · Redefinição de Senha
+        </span>
+        <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">
+          Solicitação de Nova Senha de Acesso
+        </h1>
+        <p style="margin:4px 0 0;color:#e2d9e6;font-size:13px;">
+          Centro Universitário de Brasília — Disciplina de Projeto Integrador
+        </p>
       </td>
     </tr>
 
-    <!-- Main Content -->
+    <!-- Hero Illustration (Direct HTML Image from Vercel CDN - NOT an Attachment) -->
     <tr>
-      <td style="padding:10px 40px 36px;">
-        <h2 style="margin:0 0 12px;font-size:22px;font-weight:700;color:#111827;text-align:center;letter-spacing:-0.3px;">
-          Redefinição de Senha 🔐
-        </h2>
-        <p style="margin:0 0 16px;font-size:15px;color:#4b5563;line-height:1.7;text-align:center;">
-          Olá, <strong style="color:#4B006E;">{username}</strong>!<br/>
-          Recebemos um pedido para alterar a senha da sua conta no <strong style="color:#4B006E;">SisCPTI</strong>.
-          Para cadastrar uma nova senha e retomar suas atividades na plataforma, clique no botão seguro abaixo:
+      <td align="center" style="padding:32px 36px 12px;background:#ffffff;">
+        <img src="{img_url}"
+             alt="Redefinição de Senha"
+             width="230"
+             style="display:block;margin:0 auto;width:230px;max-width:100%;height:auto;border:0;outline:none;" />
+      </td>
+    </tr>
+
+    <!-- Body Content -->
+    <tr>
+      <td style="padding:10px 36px 28px;">
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#334155;">
+          Prezado(a) <strong style="color:#3A1346;">{username}</strong>,
+        </p>
+        <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#475569;">
+          Recebemos uma solicitação para redefinir a credencial de segurança de sua conta na plataforma institucional <strong>SisCPTI (Caderno de Projetos de TI)</strong> do UniCEUB. Para criar uma nova senha e restabelecer o seu acesso seguro, acione o botão abaixo:
         </p>
 
-        <!-- CTA Button -->
+        <!-- Formal Metadata Box -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;border-left:4px solid #3A1346;">
+          <tr>
+            <td style="padding:14px 18px;">
+              <table width="100%" cellpadding="3" cellspacing="0" style="font-size:13px;color:#475569;">
+                <tr>
+                  <td width="130" style="font-weight:600;color:#1e293b;">Sistema:</td>
+                  <td>SisCPTI · UniCEUB</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:600;color:#1e293b;">Identificador:</td>
+                  <td>{username}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:600;color:#1e293b;">Finalidade:</td>
+                  <td>Alteração de Senha de Acesso</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:600;color:#1e293b;">Validade do Link:</td>
+                  <td><span style="color:#dc2626;font-weight:600;">1 hora</span> (expira após utilização)</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Formal Institutional Action Button -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
           <tr>
             <td align="center">
               <table cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="border-radius:12px;background:linear-gradient(135deg,#4B006E 0%,#7A1BB5 100%);box-shadow:0 4px 16px rgba(122,27,181,0.35);text-align:center;">
+                  <td style="border-radius:8px;background:#3A1346;text-align:center;box-shadow:0 3px 10px rgba(58,19,70,0.25);">
                     <a href="{link}"
-                       style="display:inline-block;padding:16px 42px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.3px;border-radius:12px;font-family:'Segoe UI',Arial,sans-serif;">
-                      🔑 Criar Nova Senha
+                       style="display:inline-block;padding:15px 38px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.5px;text-transform:uppercase;font-family:'Segoe UI',Roboto,sans-serif;">
+                      Redefinir Minha Senha de Acesso
                     </a>
                   </td>
                 </tr>
@@ -201,36 +299,34 @@ def email_template_recuperacao(username: str, link: str, img_src: str = None, ba
           </tr>
         </table>
 
-        <!-- Security / Validity Info Box -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f4ff;border-left:4px solid #7A1BB5;border-radius:0 10px 10px 0;margin-bottom:24px;">
-          <tr>
-            <td style="padding:16px 20px;">
-              <p style="margin:0;font-size:13px;color:#4B006E;font-weight:700;">⏰ Link temporário válido por 1 hora</p>
-              <p style="margin:6px 0 0;font-size:12px;color:#6b7280;line-height:1.6;">
-                Por motivos de segurança, este link expira automaticamente. Caso o botão não funcione, use o link direto:
-              </p>
-              <p style="margin:8px 0 0;font-size:12px;color:#7A1BB5;word-break:break-all;font-family:monospace;background:#ede4ff;padding:8px 12px;border-radius:6px;">
-                {link}
-              </p>
-            </td>
-          </tr>
-        </table>
+        <!-- Fallback Link Section -->
+        <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:6px;padding:14px 16px;margin-bottom:20px;">
+          <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#475569;">
+            Caso não consiga utilizar o botão acima, copie e cole o link seguro abaixo no seu navegador:
+          </p>
+          <p style="margin:0;font-size:12px;color:#3A1346;word-break:break-all;font-family:Consolas,monospace;">
+            {link}
+          </p>
+        </div>
 
-        <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.6;text-align:center;">
-          Se você não solicitou a redefinição de senha, nenhuma ação é necessária. Sua senha continuará segura e inalterada.
+        <p style="margin:0;font-size:12px;color:#64748b;line-height:1.6;">
+          <strong>Aviso de Segurança:</strong> Caso você não tenha solicitado a alteração de sua senha, desconsidere este e-mail imediatamente. A sua senha atual continuará protegida e inalterada.
         </p>
       </td>
     </tr>
 
-    <!-- Institutional Footer -->
+    <!-- Formal Institutional Footer -->
     <tr>
-      <td style="background:#fafafa;border-top:1px solid #f0f0f0;padding:24px 30px;text-align:center;">
-        <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6b7280;">
+      <td style="background:#f8fafc;border-top:1px solid #edf2f7;padding:24px 36px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#3A1346;">
           Centro Universitário de Brasília – UniCEUB
         </p>
-        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5;">
-          SisCPTI · Caderno de Projetos de TI<br/>
-          Este é um e-mail automático gerado pelo sistema. Por favor, não responda.
+        <p style="margin:0 0 10px;font-size:12px;color:#64748b;line-height:1.6;">
+          SEPN 707/907 - Campus Universitário Darcy Ribeiro, Asa Norte, Brasília - DF, CEP 70790-075<br/>
+          Pró-Reitoria de Graduação · Coordenação de Cursos de Tecnologia da Informação
+        </p>
+        <p style="margin:0;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px;">
+          Mensagem institucional automática. Este canal não recebe respostas.
         </p>
       </td>
     </tr>
@@ -320,7 +416,7 @@ def save_file_locally(file):
     
     return "img/uploads/" + unique_filename
 
-def enviar_email(destinatario, assunto, corpo, inline_images=None):
+def enviar_email(destinatario, assunto, corpo):
     mail_server = os.environ.get('MAIL_SERVER', '').strip()
     mail_user = os.environ.get('MAIL_USER', '').strip()
     mail_pass = os.environ.get('MAIL_PASS', '').strip()
@@ -332,31 +428,10 @@ def enviar_email(destinatario, assunto, corpo, inline_images=None):
     if not mail_server or not mail_user:
         return False
     try:
-        if inline_images:
-            msg = MIMEMultipart('related')
-            msg['Subject'] = assunto
-            msg['From'] = mail_user
-            msg['To'] = destinatario
-            
-            alt_part = MIMEMultipart('alternative')
-            msg.attach(alt_part)
-            alt_part.attach(MIMEText(corpo, 'html', 'utf-8'))
-            
-            for item in inline_images:
-                cid = item.get('cid')
-                img_path = item.get('path')
-                if img_path and os.path.exists(img_path):
-                    with open(img_path, 'rb') as f:
-                        img_data = f.read()
-                        img_mime = MIMEImage(img_data)
-                        img_mime.add_header('Content-ID', f'<{cid}>')
-                        img_mime.add_header('Content-Disposition', 'inline', filename=os.path.basename(img_path))
-                        msg.attach(img_mime)
-        else:
-            msg = MIMEText(corpo, 'html', 'utf-8')
-            msg['Subject'] = assunto
-            msg['From'] = mail_user
-            msg['To'] = destinatario
+        msg = MIMEText(corpo, 'html', 'utf-8')
+        msg['Subject'] = assunto
+        msg['From'] = mail_user
+        msg['To'] = destinatario
         
         if mail_port == 465:
             with smtplib.SMTP_SSL(mail_server, 465) as srv:
