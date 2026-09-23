@@ -32,9 +32,9 @@ function AppLayout() {
   const isWorkspace = location.pathname.includes('/workspace');
 
   return (
-    <div className={`min-h-screen bg-bg-primary text-text-primary font-sans flex flex-col ${isWorkspace ? 'h-screen w-screen overflow-hidden' : ''}`}>
+    <div className={`bg-bg-primary text-text-primary font-sans flex flex-col ${isWorkspace ? 'h-screen w-full overflow-hidden' : 'min-h-screen'}`}>
       {!isWorkspace && <Header />}
-      <main className={`flex-1 ${isWorkspace ? 'h-full overflow-hidden' : ''}`}>
+      <main className={`flex-1 flex flex-col min-h-0 min-w-0 ${isWorkspace ? 'overflow-hidden' : ''}`}>
         <Routes>
           {/* Rotas Públicas */}
           <Route path="/" element={<Home />} />
