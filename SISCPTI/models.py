@@ -16,6 +16,21 @@ class User(db.Model):
     bio = db.Column(db.String(300), nullable=True)
     interesses = db.Column(db.String(300), nullable=True, default='')
     ativo = db.Column(db.Boolean, nullable=False, default=True)
+    status_aprovacao = db.Column(db.String(20), nullable=False, default='APROVADO')  # 'PENDENTE', 'APROVADO', 'REJEITADO'
+    data_cadastro = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "email": self.email,
+            "bio": self.bio or "",
+            "interesses": self.interesses or "",
+            "ativo": bool(self.ativo),
+            "status_aprovacao": self.status_aprovacao or "APROVADO",
+            "data_cadastro": self.data_cadastro.isoformat() if self.data_cadastro else None
+        }
 
 import random
 

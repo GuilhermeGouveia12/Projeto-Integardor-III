@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { AprovacoesContasTab } from '../components/AprovacoesContasTab';
 
 export function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<'tab-projetos' | 'tab-submissoes' | 'tab-candidaturas' | 'tab-usuarios'>('tab-projetos');
+  const [activeTab, setActiveTab] = useState<'tab-projetos' | 'tab-submissoes' | 'tab-candidaturas' | 'tab-usuarios' | 'tab-aprovacoes'>('tab-projetos');
+  const [pendentesCount, setPendentesCount] = useState<number>(0);
   const [projetos, setProjetos] = useState<any[]>([]);
   const [submissoes, setSubmissoes] = useState<any[]>([]);
   const [candidaturas, setCandidaturas] = useState<any[]>([]);
@@ -56,6 +58,9 @@ export function AdminDashboard() {
         setSubmissoes(dashRes.data.data.submissoes || []);
         setCandidaturas(dashRes.data.data.candidaturas || []);
         setUsuarios(dashRes.data.data.usuarios || []);
+        if (dashRes.data.data.aprovacoes_pendentes_count !== undefined) {
+          setPendentesCount(dashRes.data.data.aprovacoes_pendentes_count);
+        }
       }
       if (statsRes.data) {
         setStats(statsRes.data);
@@ -531,6 +536,24 @@ export function AdminDashboard() {
             activeTab === 'tab-usuarios' ? 'bg-white/20 text-white' : 'bg-bg-primary text-text-secondary'
           }`}>
             {usuarios.length}
+          </span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('tab-aprovacoes')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'tab-aprovacoes' 
+              ? 'bg-purple-primary text-white shadow-sm' 
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-primary'
+          }`}
+        >
+          <span>Aprovações de Contas</span>
+          <span className={`px-2 py-0.5 rounded-full text-[0.7rem] font-bold ${
+            pendentesCount > 0 
+              ? 'bg-amber-500 text-white animate-pulse' 
+              : activeTab === 'tab-aprovacoes' ? 'bg-white/20 text-white' : 'bg-bg-primary text-text-secondary'
+          }`}>
+            {pendentesCount}
           </span>
         </button>
       </div>
@@ -1029,6 +1052,11 @@ export function AdminDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ABA 5: APROVAÇÕES DE CONTAS */}
+      {activeTab === 'tab-aprovacoes' && (
+        <AprovacoesContasTab onStatusChange={carregarDados} />
       )}
 
     </div>

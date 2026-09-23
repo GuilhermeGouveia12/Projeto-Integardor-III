@@ -153,6 +153,14 @@ export function Register() {
               {role === 'professor' && 'Para docentes do UniCEUB que irão orientar equipes e acompanhar projetos.'}
               {role === 'empresa' && 'Para empresas e parceiros externos interessados em propor problemas e acompanhar MVPs.'}
             </p>
+            {role !== 'aluno' && (
+              <div className="mt-2.5 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                <span className="text-sm shrink-0">⏳</span>
+                <span className="leading-relaxed">
+                  <strong>Aviso Institucional:</strong> Contas com perfil de <strong>{role === 'professor' ? 'Professor' : 'Empresa'}</strong> entram em espera e passam por validação prévia da Coordenação ou Administração antes do primeiro acesso.
+                </span>
+              </div>
+            )}
           </div>
 
           <div>

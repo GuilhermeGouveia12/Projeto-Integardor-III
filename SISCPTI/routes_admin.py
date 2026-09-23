@@ -5,7 +5,7 @@ import json, os, uuid, io, csv
 
 from app_instance import app
 from models import db, Project, Submission, Application, User, Notification, ActivityLog, get_random_default_cover, Message, Rating
-from utils import log_atividade, upload_file_to_supabase
+from utils import log_atividade, upload_file_to_supabase, enviar_email, email_template_conta_aprovada, email_template_conta_recusada, get_frontend_url
 
 # =========================
 # Área administrativa API
@@ -20,7 +20,8 @@ def api_admin_dashboard():
     
     submissoes = [s.to_dict() for s in Submission.query.all()]
     candidaturas = [c.to_dict() for c in Application.query.all()]
-    usuarios = [{"id": u.id, "username": u.username, "role": u.role, "email": u.email, "ativo": u.ativo} for u in User.query.all()]
+    usuarios = [{"id": u.id, "username": u.username, "role": u.role, "email": u.email, "ativo": u.ativo, "status_aprovacao": getattr(u, 'status_aprovacao', 'APROVADO')} for u in User.query.all()]
+    aprovacoes_pendentes_count = User.query.filter(User.status_aprovacao == 'PENDENTE').count()
 
     return jsonify({
         "status": "success",
@@ -28,7 +29,8 @@ def api_admin_dashboard():
             "projetos": projetos,
             "submissoes": submissoes,
             "candidaturas": candidaturas,
-            "usuarios": usuarios
+            "usuarios": usuarios,
+            "aprovacoes_pendentes_count": aprovacoes_pendentes_count
         }
     })
 
@@ -481,12 +483,117 @@ def coordenador_dashboard():
     submissoes = Submission.query.all()
     projetos = Project.query.all()
     professores = User.query.filter_by(role='professor').all()
+    aprovacoes_pendentes_count = User.query.filter(User.status_aprovacao == 'PENDENTE').count()
     
     return jsonify({
         "status": "success",
         "submissoes": [s.to_dict() for s in submissoes],
         "projetos": [p.to_dict() for p in projetos],
-        "professores": [{"id": pr.id, "username": pr.username} for pr in professores]
+        "professores": [{"id": pr.id, "username": pr.username} for pr in professores],
+        "aprovacoes_pendentes_count": aprovacoes_pendentes_count
+    })
+
+# =========================
+# Gestão de Aprovações de Contas (Admin & Coordenador)
+# =========================
+@app.route('/api/admin/aprovacoes', methods=['GET'])
+def api_admin_listar_aprovacoes():
+    if session.get('role') not in ['admin', 'coordenador']:
+        return jsonify({"status": "error", "message": "Acesso restrito a coordenadores e administradores."}), 403
+
+    # Busca contas que requerem validação (professor e empresa, ou qualquer conta com status pendente)
+    usuarios = User.query.filter(
+        db.or_(
+            User.role.in_(['professor', 'empresa']),
+            User.status_aprovacao == 'PENDENTE'
+        )
+    ).all()
+
+    # Ordena: Pendentes primeiro, depois por id decrescente
+    def sort_key(u):
+        status_rank = 0 if getattr(u, 'status_aprovacao', 'APROVADO') == 'PENDENTE' else 1
+        return (status_rank, -u.id)
+
+    usuarios_ordenados = sorted(usuarios, key=sort_key)
+    resultado = [u.to_dict() for u in usuarios_ordenados]
+    pendentes_count = sum(1 for u in usuarios if getattr(u, 'status_aprovacao', 'APROVADO') == 'PENDENTE')
+
+    return jsonify({
+        "status": "success",
+        "data": {
+            "usuarios": resultado,
+            "pendentes_count": pendentes_count
+        }
+    })
+
+@app.route('/api/admin/aprovacoes/<int:user_id>/aprovar', methods=['POST'])
+def api_admin_aprovar_usuario(user_id):
+    if session.get('role') not in ['admin', 'coordenador']:
+        return jsonify({"status": "error", "message": "Acesso restrito."}), 403
+
+    usuario = db.session.get(User, user_id)
+    if not usuario:
+        return jsonify({"status": "error", "message": "Usuário não encontrado."}), 404
+
+    usuario.status_aprovacao = 'APROVADO'
+    usuario.ativo = True
+    db.session.commit()
+
+    log_atividade(session.get('user', 'sistema'), f'Aprovou cadastro institucional de {usuario.role}: @{usuario.username}')
+
+    # Notificação interna para o usuário
+    try:
+        notif = Notification(
+            username=usuario.username,
+            mensagem=f"Parabéns! Sua conta institucional de {usuario.role.capitalize()} foi homologada com sucesso.",
+            link="/perfil"
+        )
+        db.session.add(notif)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar notificação de aprovação: {e}")
+
+    # Envia e-mail de liberação de conta
+    if usuario.email:
+        base_url = get_frontend_url() or request.host_url.rstrip('/')
+        login_url = base_url + "/login"
+        corpo = email_template_conta_aprovada(usuario.username, usuario.role, login_url=login_url)
+        enviar_email(usuario.email, 'Acesso Institucional Homologado – SisCPTI · UniCEUB', corpo)
+
+    return jsonify({
+        "status": "success",
+        "message": f"Conta de @{usuario.username} homologada e liberada com sucesso!",
+        "usuario": usuario.to_dict()
+    })
+
+@app.route('/api/admin/aprovacoes/<int:user_id>/rejeitar', methods=['POST'])
+def api_admin_rejeitar_usuario(user_id):
+    if session.get('role') not in ['admin', 'coordenador']:
+        return jsonify({"status": "error", "message": "Acesso restrito."}), 403
+
+    usuario = db.session.get(User, user_id)
+    if not usuario:
+        return jsonify({"status": "error", "message": "Usuário não encontrado."}), 404
+
+    data = request.get_json(silent=True) or {}
+    motivo = data.get('motivo', '').strip()
+
+    usuario.status_aprovacao = 'REJEITADO'
+    usuario.ativo = False
+    db.session.commit()
+
+    log_atividade(session.get('user', 'sistema'), f'Recusou cadastro de {usuario.role}: @{usuario.username}. Motivo: {motivo or "Não especificado"}')
+
+    # Envia e-mail informando a recusa
+    if usuario.email:
+        corpo = email_template_conta_recusada(usuario.username, usuario.role, motivo=motivo)
+        enviar_email(usuario.email, 'Atualização sobre Cadastro Institucional – SisCPTI · UniCEUB', corpo)
+
+    return jsonify({
+        "status": "success",
+        "message": f"Solicitação de @{usuario.username} foi indeferida.",
+        "usuario": usuario.to_dict()
     })
 
 @app.route('/api/coordenador/projeto/<int:proj_id>/atribuir', methods=['POST'])

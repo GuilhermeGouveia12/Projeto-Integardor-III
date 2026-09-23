@@ -46,6 +46,13 @@ if os.environ.get('VERCEL') != '1':
                         conn.execute(text('ALTER TABLE "user" ADD COLUMN ativo BOOLEAN DEFAULT TRUE'))
                     else:
                         conn.execute(text('ALTER TABLE "user" ADD COLUMN ativo BOOLEAN DEFAULT 1'))
+                if 'status_aprovacao' not in user_cols:
+                    conn.execute(text("ALTER TABLE \"user\" ADD COLUMN status_aprovacao VARCHAR(20) DEFAULT 'APROVADO'"))
+                if 'data_cadastro' not in user_cols:
+                    if db.engine.name == 'postgresql':
+                        conn.execute(text('ALTER TABLE "user" ADD COLUMN data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP'))
+                    else:
+                        conn.execute(text('ALTER TABLE "user" ADD COLUMN data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP'))
                     
                 # Project: professor_id, tags
                 proj_cols = [c['name'] for c in inspector.get_columns('project')]

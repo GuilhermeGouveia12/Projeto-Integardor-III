@@ -5,8 +5,8 @@ import os
 import uuid
 
 from app_instance import app, base_dir
-from models import db, User, PasswordReset, AccountVerification
-from utils import log_atividade, enviar_email, email_template_ativacao, email_template_recuperacao, get_frontend_url
+from models import db, User, PasswordReset, AccountVerification, Notification
+from utils import log_atividade, enviar_email, email_template_ativacao, email_template_recuperacao, email_template_espera_aprovacao, get_frontend_url
 
 # =========================
 # Login e Cadastro (API)
@@ -23,8 +23,22 @@ def api_login():
     usuario = User.query.filter_by(username=user).first()
 
     if usuario and check_password_hash(usuario.password, password):
+        # Validação de contas aguardando homologação
+        status_aprov = getattr(usuario, 'status_aprovacao', 'APROVADO')
+        if status_aprov == 'PENDENTE':
+            return jsonify({
+                "status": "error", 
+                "message": f"Sua conta com perfil '{usuario.role.capitalize()}' está em análise aguardando validação de um coordenador ou administrador."
+            }), 403
+
+        if status_aprov == 'REJEITADO':
+            return jsonify({
+                "status": "error", 
+                "message": f"A solicitação de cadastro para a conta '{usuario.username}' não foi homologada pela coordenação ou administração."
+            }), 403
+
         if not usuario.ativo:
-            return jsonify({"status": "error", "message": "Conta não ativada. Verifique seu e-mail."}), 403
+            return jsonify({"status": "error", "message": "Conta não ativada. Verifique seu e-mail para ativar."}), 403
 
         session['logged_in'] = True
         session['user'] = usuario.username
@@ -71,27 +85,75 @@ def api_cadastro():
     allowed_roles = ['aluno', 'professor', 'empresa', 'cliente']
     role = requested_role if requested_role in allowed_roles else 'aluno'
 
-    novo_usuario = User(username=username, email=email, password=generate_password_hash(password), role=role, ativo=False)
-    db.session.add(novo_usuario)
-    db.session.commit()
+    if role in ['professor', 'empresa']:
+        # Contas de Professor e Empresa passam por validação obrigatória
+        novo_usuario = User(
+            username=username, 
+            email=email, 
+            password=generate_password_hash(password), 
+            role=role, 
+            ativo=False,
+            status_aprovacao='PENDENTE'
+        )
+        db.session.add(novo_usuario)
+        db.session.commit()
 
-    token = str(uuid.uuid4())
-    expira = datetime.utcnow() + timedelta(days=1)
-    verif = AccountVerification(username=username, token=token, expira_em=expira)
-    db.session.add(verif)
-    db.session.commit()
+        # Envia notificação interna para todos os Coordenadores e Admins
+        try:
+            staff_users = User.query.filter(User.role.in_(['admin', 'coordenador'])).all()
+            role_nome = "Professor Orientador" if role == 'professor' else "Empresa Parceira"
+            for staff in staff_users:
+                notif = Notification(
+                    username=staff.username,
+                    mensagem=f"Nova solicitação de conta ({role_nome}): @{username}. Requer validação.",
+                    link="/coordenador" if staff.role == 'coordenador' else "/admin"
+                )
+                db.session.add(notif)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Erro ao disparar notificações de nova conta: {e}")
 
-    # Gera o link apontando para o frontend React
-    # Em produção (Vercel), usa APP_URL. Localmente usa request.host_url.
-    base_url = get_frontend_url() or request.host_url.rstrip('/')
-    link = base_url + f"/verificar-conta/{token}"
-    corpo = email_template_ativacao(username, link, base_url=base_url)
-    enviado = enviar_email(email, 'Ativação de Conta Institucional – SisCPTI · UniCEUB', corpo)
+        log_atividade(username, f'Solicitou cadastro institucional como {role}')
 
-    return jsonify({
-        "status": "success", 
-        "message": "Conta criada com sucesso! Verifique seu e-mail para ativar."
-    })
+        # Envia e-mail institucional informando que está em espera
+        base_url = get_frontend_url() or request.host_url.rstrip('/')
+        corpo = email_template_espera_aprovacao(username, role, email, base_url=base_url)
+        enviar_email(email, 'Solicitação de Cadastro em Espera – SisCPTI · UniCEUB', corpo)
+
+        return jsonify({
+            "status": "success", 
+            "message": f"Solicitação registrada com sucesso! Sua conta com perfil de {role.capitalize()} está em espera aguardando a validação de um coordenador ou administrador. Enviamos os detalhes para seu e-mail."
+        })
+    else:
+        # Aluno e demais perfis padrão
+        novo_usuario = User(
+            username=username, 
+            email=email, 
+            password=generate_password_hash(password), 
+            role=role, 
+            ativo=False,
+            status_aprovacao='APROVADO'
+        )
+        db.session.add(novo_usuario)
+        db.session.commit()
+
+        token = str(uuid.uuid4())
+        expira = datetime.utcnow() + timedelta(days=1)
+        verif = AccountVerification(username=username, token=token, expira_em=expira)
+        db.session.add(verif)
+        db.session.commit()
+
+        # Gera o link apontando para o frontend React
+        base_url = get_frontend_url() or request.host_url.rstrip('/')
+        link = base_url + f"/verificar-conta/{token}"
+        corpo = email_template_ativacao(username, link, base_url=base_url)
+        enviar_email(email, 'Ativação de Conta Institucional – SisCPTI · UniCEUB', corpo)
+
+        return jsonify({
+            "status": "success", 
+            "message": "Conta criada com sucesso! Verifique seu e-mail para ativar."
+        })
 
 @app.route('/api/verificar-conta/<token>', methods=['POST', 'GET'])
 def api_verificar_conta(token):

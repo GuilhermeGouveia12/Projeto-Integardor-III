@@ -2,10 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import { AprovacoesContasTab } from '../components/AprovacoesContasTab';
 
 export function CoordenadorDashboard() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'tab-projetos' | 'tab-submissoes'>('tab-projetos');
+  const [activeTab, setActiveTab] = useState<'tab-projetos' | 'tab-submissoes' | 'tab-aprovacoes'>('tab-projetos');
+  const [pendentesCount, setPendentesCount] = useState<number>(0);
 
   const [projetos, setProjetos] = useState<any[]>([]);
   const [submissoes, setSubmissoes] = useState<any[]>([]);
@@ -49,6 +51,9 @@ export function CoordenadorDashboard() {
         setProjetos(coordRes.data.projetos || []);
         setSubmissoes(coordRes.data.submissoes || []);
         setProfessores(coordRes.data.professores || []);
+        if (coordRes.data.aprovacoes_pendentes_count !== undefined) {
+          setPendentesCount(coordRes.data.aprovacoes_pendentes_count);
+        }
 
         const profMap: Record<number, string> = {};
         (coordRes.data.projetos || []).forEach((p: any) => {
@@ -457,6 +462,25 @@ export function CoordenadorDashboard() {
             </span>
           </button>
 
+          <button 
+            type="button"
+            onClick={() => setActiveTab('tab-aprovacoes')}
+            className={`px-4 py-2 rounded-md text-xs sm:text-sm font-bold cursor-pointer transition-all flex items-center gap-2 border-none ${
+              activeTab === 'tab-aprovacoes'
+                ? 'bg-purple-primary text-white shadow-sm'
+                : 'bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-primary/80'
+            }`}
+          >
+            <span>Aprovações de Contas (Professor / Empresa)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              pendentesCount > 0 
+                ? 'bg-amber-500 text-white animate-pulse'
+                : activeTab === 'tab-aprovacoes' ? 'bg-white/20 text-white' : 'bg-border-color text-text-secondary'
+            }`}>
+              {pendentesCount}
+            </span>
+          </button>
+
         </div>
 
         {/* TAB 1: GESTÃO DE ORIENTADORES */}
@@ -718,6 +742,11 @@ export function CoordenadorDashboard() {
             </div>
 
           </div>
+        )}
+
+        {/* TAB 3: APROVAÇÕES DE CONTAS (PROFESSOR / EMPRESA) */}
+        {activeTab === 'tab-aprovacoes' && (
+          <AprovacoesContasTab onStatusChange={carregarDados} />
         )}
 
       </div>
